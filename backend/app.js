@@ -1,20 +1,21 @@
 // app.js
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
+import express, { json, urlencoded } from 'express';
+import cors from 'cors';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
+app.use(json());
+app.use(urlencoded({ extended: true }));
 // Static files (nếu cần)
-app.use(express.static(path.join(__dirname, 'public')));
+const __dirname = dirname(fileURLToPath(import.meta.url));
+app.use(express.static(join(__dirname, 'public')));
 
 // Routes
-const userRoutes = require('./app/routes/user');
+import userRoutes from './app/routes/user';
 app.use('/api/users', userRoutes);
 
 // Test route
@@ -22,4 +23,4 @@ app.get('/', (req, res) => {
   res.send('API is working!');
 });
 
-module.exports = app;
+export default app;

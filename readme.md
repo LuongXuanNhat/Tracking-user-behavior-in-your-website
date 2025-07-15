@@ -1,3 +1,11 @@
+# Install
+
+BE: nodejs
+FE: react/nextjs
+npm 10.9.2
+nodejs v22.17.0
+sử dụng VSC
+
 # Các hệ cơ sở dữ liệu
 
 Created: July 8, 2025 9:29 AM
@@ -32,13 +40,13 @@ Xây dựng một hệ thống có khả năng:
 ### 2. **Core (Node.js + Cassandra) – Xử lý và lưu trữ dữ liệu**
 
 - **Node.js** đảm nhiệm phần backend:
-    - Tạo các REST API để nhận dữ liệu từ client
-    - Xử lý dữ liệu theo thời gian thực hoặc batch
-    - Tối ưu hiệu suất với bất đồng bộ (async/await)
+  - Tạo các REST API để nhận dữ liệu từ client
+  - Xử lý dữ liệu theo thời gian thực hoặc batch
+  - Tối ưu hiệu suất với bất đồng bộ (async/await)
 - **Cassandra** được dùng để lưu trữ dữ liệu:
-    - Thiết kế schema theo thời gian (time-series)
-    - Hỗ trợ phân tán, dung lượng lớn
-    - Chịu lỗi tốt, đảm bảo hoạt động ổn định
+  - Thiết kế schema theo thời gian (time-series)
+  - Hỗ trợ phân tán, dung lượng lớn
+  - Chịu lỗi tốt, đảm bảo hoạt động ổn định
 
 ---
 
@@ -64,19 +72,17 @@ Xây dựng một hệ thống có khả năng:
 
 - Cài trên máy hoặc dùng dịch vụ (VD: AstraDB, ScyllaDB…)
 - Thiết kế schema: bảng `user_events` gồm các trường như:
-    
-    ```
-    user_id | timestamp | event_type | page_url | metadata
-    
-    ```
-    
+  ```
+  user_id | timestamp | event_type | page_url | metadata
+
+  ```
 
 **1.3 Viết backend bằng Node.js**
 
 - Cài đặt project với Express.js
 - Tạo API:
-    - `POST /track` → nhận dữ liệu từ client
-    - `GET /report` → truy xuất thống kê
+  - `POST /track` → nhận dữ liệu từ client
+  - `GET /report` → truy xuất thống kê
 - Kết nối Cassandra bằng thư viện `cassandra-driver`
 
 **1.4 Xây dựng script thu thập**
@@ -91,16 +97,16 @@ Xây dựng một hệ thống có khả năng:
 **2.1 Xây dựng giao diện Report Assistant**
 
 - Hiển thị:
-    - Số lượt truy cập theo thời gian
-    - Top hành vi
-    - Các hành vi dẫn đến chuyển đổi
+  - Số lượt truy cập theo thời gian
+  - Top hành vi
+  - Các hành vi dẫn đến chuyển đổi
 
 **2.2 Viết thêm API Node.js**
 
 - Tạo các endpoint phục vụ frontend:
-    - `GET /stats/top-events`
-    - `GET /stats/trend`
-    - `GET /stats/by-user`
+  - `GET /stats/top-events`
+  - `GET /stats/trend`
+  - `GET /stats/by-user`
 
 **2.3 Kết nối frontend ↔ backend**
 
@@ -116,14 +122,14 @@ Xây dựng một hệ thống có khả năng:
 
 ## 🔍 Công nghệ sử dụng
 
-| Thành phần | Công nghệ |
-| --- | --- |
-| Backend | Node.js (Express.js) |
-| Database | Cassandra |
-| Client Script | JavaScript |
-| API | REST (JSON) |
-| Báo cáo | HTML/JS (hoặc React) |
-| Triển khai | Linux/macOS, VSCode, Postman |
+| Thành phần    | Công nghệ                    |
+| ------------- | ---------------------------- |
+| Backend       | Node.js (Express.js)         |
+| Database      | Cassandra                    |
+| Client Script | JavaScript                   |
+| API           | REST (JSON)                  |
+| Báo cáo       | HTML/JS (hoặc React)         |
+| Triển khai    | Linux/macOS, VSCode, Postman |
 
 ---
 
@@ -135,9 +141,10 @@ Xây dựng một hệ thống có khả năng:
 
 ---
 
-**MỤC TIÊU CỦA ĐỒ ÁN
+\*\*MỤC TIÊU CỦA ĐỒ ÁN
 NỘI DUNG LOG CHÍNH
+
 - Lượt click - ảnh , bài đánh giá , bài blog ( 1 )
-- Lượt xem	( 2)
-- Mở rộng phân tích Từ 1 và 2 =>   (3)	- Dịch vụ nào phổ biến nhất / ít dùng nhất
-NHIỆM VỤ: API cho những ý trên , và Script cho log**
+- Lượt xem ( 2)
+- Mở rộng phân tích Từ 1 và 2 =>   (3) - Dịch vụ nào phổ biến nhất / ít dùng nhất
+  NHIỆM VỤ: API cho những ý trên , và Script cho log\*\*

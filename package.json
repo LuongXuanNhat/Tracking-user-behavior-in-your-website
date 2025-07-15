@@ -1,20 +1,26 @@
 {
-  "name": "cac_he_csdl",
+  "name": "user-behavior-tracking",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "Multi-website user behavior tracking system",
+  "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "node server.js"
   },
+  "type": "module",
   "keywords": [],
   "author": "",
   "license": "ISC",
   "directories": {
     "test": "tests"
   },
-  "description": "",
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.31.0",
+    "eslint": "^9.31.0",
+    "globals": "^16.3.0"
   }
 }
