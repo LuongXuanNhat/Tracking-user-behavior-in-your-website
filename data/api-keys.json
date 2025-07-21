@@ -1,0 +1,58 @@
+{
+  "keyCounter": 3,
+  "apiKeys": {
+    "tk_1753083076941_5d70e9babf8f9a54bb062727d2c64ca6": {
+      "id": 1,
+      "apiKey": "tk_1753083076941_5d70e9babf8f9a54bb062727d2c64ca6",
+      "websiteId": 1753083076941,
+      "websiteName": "Test Website",
+      "websiteUrl": "https://test.com",
+      "type": "production",
+      "description": "Test production key",
+      "owner": "cli-admin",
+      "status": "active",
+      "permissions": {
+        "tracking": true,
+        "analytics": true,
+        "users": true,
+        "rateLimit": {
+          "requests": 10000,
+          "window": 3600
+        }
+      },
+      "created_at": "2025-07-21T07:31:16.941Z",
+      "updated_at": "2025-07-21T07:31:16.941Z",
+      "last_used": null,
+      "usage_count": 0,
+      "expires_at": "2026-07-21T07:31:16.941Z"
+    },
+    "tk_1753083093591_6b7b000e0ac1ae09725c2066839d0f75": {
+      "id": 2,
+      "apiKey": "tk_1753083093591_6b7b000e0ac1ae09725c2066839d0f75",
+      "websiteId": 1753083093591,
+      "websiteName": "Demo Site",
+      "websiteUrl": "https://demo.example.com",
+      "type": "demo",
+      "description": "Demo website for testing",
+      "owner": "cli-admin",
+      "status": "disabled",
+      "permissions": {
+        "tracking": true,
+        "analytics": true,
+        "users": false,
+        "rateLimit": {
+          "requests": 100,
+          "window": 3600
+        }
+      },
+      "created_at": "2025-07-21T07:31:33.591Z",
+      "updated_at": "2025-07-21T07:33:02.417Z",
+      "last_used": null,
+      "usage_count": 0,
+      "expires_at": "2025-08-20T07:31:33.591Z",
+      "disabled_reason": "Testing disable function",
+      "disabled_at": "2025-07-21T07:33:02.417Z"
+    }
+  },
+  "lastUpdated": "2025-07-21T07:33:02.417Z"
+}

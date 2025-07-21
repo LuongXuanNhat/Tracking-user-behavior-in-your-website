@@ -5,7 +5,12 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node server.js"
+    "start": "node server.js",
+    "key:create": "node tools/api-key-manager.js create",
+    "key:list": "node tools/api-key-manager.js list",
+    "key:stats": "node tools/api-key-manager.js stats",
+    "key:disable": "node tools/api-key-manager.js disable",
+    "key:check": "node tools/api-key-manager.js check"
   },
   "type": "module",
   "keywords": [],
@@ -15,7 +20,9 @@
     "test": "tests"
   },
   "dependencies": {
+    "commander": "^12.1.0",
     "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
     "express": "^4.19.2"
   },
   "devDependencies": {

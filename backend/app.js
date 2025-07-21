@@ -27,6 +27,7 @@ import userRoutes from "./app/routes/user.js";
 import trackingRoutes from "./app/routes/tracking.js";
 import analyticsRoutes from "./app/routes/analytics.js";
 import websiteRoutes from "./app/routes/website.js";
+import apiKeyRoutes from "./app/routes/apikey.js";
 import { getValidApiKeys } from "./app/middlewares/apikey.js";
 import { Website } from "./app/models/Website.js";
 
@@ -34,6 +35,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/tracking", trackingRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/websites", websiteRoutes);
+app.use("/api/keys", apiKeyRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -46,6 +48,7 @@ app.get("/", (req, res) => {
       tracking: "/api/tracking",
       analytics: "/api/analytics",
       websites: "/api/websites",
+      keys: "/api/keys",
     },
     auth: {
       required: true,
