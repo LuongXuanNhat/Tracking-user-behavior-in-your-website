@@ -11,77 +11,95 @@ export class AnalyticsAPI {
     try {
       const { start_date, end_date, element_type } = req.query;
 
-      // Giả lập data cho demo (sẽ thay bằng query Cassandra)
-      const sampleClickData = [
-        {
-          element_type: "image",
-          element_id: "hero-banner",
-          page_url: "/home",
-          click_count: 245,
-          unique_users: 128,
-        },
-        {
-          element_type: "blog",
-          element_id: "blog-post-1",
-          page_url: "/blog/web-development",
-          click_count: 89,
-          unique_users: 67,
-        },
-        {
-          element_type: "review",
-          element_id: "review-section",
-          page_url: "/services/web-design",
-          click_count: 156,
-          unique_users: 94,
-        },
-        {
-          element_type: "image",
-          element_id: "portfolio-img-1",
-          page_url: "/portfolio",
-          click_count: 78,
-          unique_users: 52,
-        },
-        {
-          element_type: "blog",
-          element_id: "blog-post-2",
-          page_url: "/blog/seo-tips",
-          click_count: 134,
-          unique_users: 89,
-        },
-      ];
+      // Lấy data thật từ tracking events
+      const allEvents = TrackingAPI.getAllEvents();
+      const clickEvents = allEvents.filter(
+        (event) => event.event_type === "click"
+      );
 
-      let filteredData = sampleClickData;
-
+      // Lọc theo element_type nếu có
+      let filteredEvents = clickEvents;
       if (element_type) {
-        filteredData = filteredData.filter(
-          (item) => item.element_type === element_type
+        filteredEvents = clickEvents.filter(
+          (event) => event.element_type === element_type
         );
       }
 
-      // Tổng hợp theo element_type
-      const summary = {};
-      filteredData.forEach((item) => {
-        if (!summary[item.element_type]) {
-          summary[item.element_type] = {
+      // Lọc theo thời gian nếu có
+      if (start_date || end_date) {
+        filteredEvents = filteredEvents.filter((event) => {
+          const eventDate = new Date(event.timestamp);
+          const start = start_date
+            ? new Date(start_date)
+            : new Date("1970-01-01");
+          const end = end_date ? new Date(end_date) : new Date();
+          return eventDate >= start && eventDate <= end;
+        });
+      }
+
+      // Tổng hợp data theo element_type và element_id
+      const summaryMap = {};
+      const detailsMap = {};
+
+      filteredEvents.forEach((event) => {
+        const key = `${event.element_type}-${event.element_id || "unknown"}`;
+
+        if (!detailsMap[key]) {
+          detailsMap[key] = {
+            element_type: event.element_type,
+            element_id: event.element_id || "unknown",
+            page_url: event.page_url,
+            click_count: 0,
+            unique_users: new Set(),
+          };
+        }
+
+        detailsMap[key].click_count++;
+        detailsMap[key].unique_users.add(event.user_id);
+
+        // Tổng hợp theo element_type
+        if (!summaryMap[event.element_type]) {
+          summaryMap[event.element_type] = {
             total_clicks: 0,
-            total_unique_users: 0,
+            total_unique_users: new Set(),
             items: [],
           };
         }
-        summary[item.element_type].total_clicks += item.click_count;
-        summary[item.element_type].total_unique_users += item.unique_users;
-        summary[item.element_type].items.push(item);
+        summaryMap[event.element_type].total_clicks++;
+        summaryMap[event.element_type].total_unique_users.add(event.user_id);
+      });
+
+      // Convert Set to count và tạo final data
+      const summary = {};
+      Object.keys(summaryMap).forEach((elementType) => {
+        summary[elementType] = {
+          total_clicks: summaryMap[elementType].total_clicks,
+          total_unique_users: summaryMap[elementType].total_unique_users.size,
+          items: [],
+        };
+      });
+
+      const details = Object.values(detailsMap).map((item) => ({
+        element_type: item.element_type,
+        element_id: item.element_id,
+        page_url: item.page_url,
+        click_count: item.click_count,
+        unique_users: item.unique_users.size,
+      }));
+
+      // Thêm items vào summary
+      details.forEach((detail) => {
+        if (summary[detail.element_type]) {
+          summary[detail.element_type].items.push(detail);
+        }
       });
 
       res.json({
         status: "success",
         data: {
           summary,
-          details: filteredData,
-          total_clicks: filteredData.reduce(
-            (sum, item) => sum + item.click_count,
-            0
-          ),
+          details,
+          total_clicks: filteredEvents.length,
         },
       });
     } catch (error) {
@@ -100,76 +118,84 @@ export class AnalyticsAPI {
     try {
       const { start_date, end_date, page_url } = req.query;
 
-      // Giả lập data lượt xem
-      const sampleViewData = [
-        {
-          page_url: "/home",
-          view_count: 1250,
-          unique_visitors: 890,
-          avg_time_on_page: "00:02:35",
-          bounce_rate: 0.35,
-        },
-        {
-          page_url: "/services",
-          view_count: 678,
-          unique_visitors: 456,
-          avg_time_on_page: "00:03:45",
-          bounce_rate: 0.28,
-        },
-        {
-          page_url: "/blog",
-          view_count: 534,
-          unique_visitors: 398,
-          avg_time_on_page: "00:04:12",
-          bounce_rate: 0.22,
-        },
-        {
-          page_url: "/portfolio",
-          view_count: 445,
-          unique_visitors: 334,
-          avg_time_on_page: "00:03:28",
-          bounce_rate: 0.31,
-        },
-        {
-          page_url: "/contact",
-          view_count: 289,
-          unique_visitors: 234,
-          avg_time_on_page: "00:01:45",
-          bounce_rate: 0.45,
-        },
-      ];
+      // Lấy data thật từ tracking events
+      const allEvents = TrackingAPI.getAllEvents();
+      const viewEvents = allEvents.filter(
+        (event) => event.event_type === "view"
+      );
 
-      let filteredData = sampleViewData;
-
+      // Lọc theo page_url nếu có
+      let filteredEvents = viewEvents;
       if (page_url) {
-        filteredData = filteredData.filter((item) =>
-          item.page_url.includes(page_url)
+        filteredEvents = viewEvents.filter((event) =>
+          event.page_url.includes(page_url)
         );
       }
 
-      // Sắp xếp theo lượt xem giảm dần
-      filteredData.sort((a, b) => b.view_count - a.view_count);
+      // Lọc theo thời gian nếu có
+      if (start_date || end_date) {
+        filteredEvents = filteredEvents.filter((event) => {
+          const eventDate = new Date(event.timestamp);
+          const start = start_date
+            ? new Date(start_date)
+            : new Date("1970-01-01");
+          const end = end_date ? new Date(end_date) : new Date();
+          return eventDate >= start && eventDate <= end;
+        });
+      }
 
-      const totalViews = filteredData.reduce(
-        (sum, item) => sum + item.view_count,
-        0
-      );
-      const totalUniqueVisitors = filteredData.reduce(
-        (sum, item) => sum + item.unique_visitors,
+      // Tổng hợp data theo page_url
+      const pageMap = {};
+
+      filteredEvents.forEach((event) => {
+        if (!pageMap[event.page_url]) {
+          pageMap[event.page_url] = {
+            page_url: event.page_url,
+            view_count: 0,
+            unique_visitors: new Set(),
+            timestamps: [],
+          };
+        }
+
+        pageMap[event.page_url].view_count++;
+        pageMap[event.page_url].unique_visitors.add(event.user_id);
+        pageMap[event.page_url].timestamps.push(new Date(event.timestamp));
+      });
+
+      // Convert to final format
+      const pages = Object.values(pageMap).map((page) => ({
+        page_url: page.page_url,
+        view_count: page.view_count,
+        unique_visitors: page.unique_visitors.size,
+        // Tính avg_time_on_page và bounce_rate có thể phức tạp hơn
+        // Hiện tại để placeholder
+        avg_time_on_page: "00:02:30",
+        bounce_rate: Math.random() * 0.5, // Random 0-50%
+      }));
+
+      // Sắp xếp theo lượt xem giảm dần
+      pages.sort((a, b) => b.view_count - a.view_count);
+
+      const totalViews = pages.reduce((sum, page) => sum + page.view_count, 0);
+      const totalUniqueVisitors = pages.reduce(
+        (sum, page) => sum + page.unique_visitors,
         0
       );
 
       res.json({
         status: "success",
         data: {
-          pages: filteredData,
+          pages,
           summary: {
             total_views: totalViews,
             total_unique_visitors: totalUniqueVisitors,
-            avg_bounce_rate: (
-              filteredData.reduce((sum, item) => sum + item.bounce_rate, 0) /
-              filteredData.length
-            ).toFixed(2),
+            avg_bounce_rate:
+              pages.length > 0
+                ? (
+                    pages.reduce((sum, page) => sum + page.bounce_rate, 0) /
+                    pages.length
+                  ).toFixed(2)
+                : "0.00",
           },
         },
       });

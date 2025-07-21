@@ -290,6 +290,56 @@ POST /users
 GET /users/:id
 ```
 
+### 4. Cập nhật user
+
+```http
+PUT /users/:id
+```
+
+**Request Body:**
+
+```json
+{
+  "name": "John Doe Updated",
+  "email": "john.updated@example.com"
+}
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": 1,
+    "name": "John Doe Updated",
+    "email": "john.updated@example.com",
+    "created_at": "2025-01-21T10:30:00.000Z",
+    "updated_at": "2025-01-21T11:00:00.000Z"
+  }
+}
+```
+
+### 5. Xóa user
+
+```http
+DELETE /users/:id
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "message": "User deleted successfully",
+  "data": {
+    "id": 1,
+    "name": "John Doe",
+    "email": "john@example.com"
+  }
+}
+```
+
 ---
 
 ## 🔧 SYSTEM ENDPOINTS
