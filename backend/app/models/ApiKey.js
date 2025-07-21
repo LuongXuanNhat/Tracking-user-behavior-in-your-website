@@ -143,13 +143,18 @@ export class ApiKey {
       ].filter(Boolean);
 
       if (envKeys.includes(apiKey)) {
+        const keyType = this.getEnvKeyType(apiKey);
         return {
           valid: true,
           key: {
             apiKey,
-            type: this.getEnvKeyType(apiKey),
+            type: keyType,
             websiteName: "Development Environment",
-            permissions: { tracking: true, analytics: true, users: true },
+            permissions: {
+              tracking: true,
+              analytics: true,
+              users: keyType !== "demo", // Consistent với logic dynamic keys
+            },
             status: "active",
           },
         };

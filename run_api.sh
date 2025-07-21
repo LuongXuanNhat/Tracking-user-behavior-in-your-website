@@ -54,10 +54,17 @@ test_endpoint() {
     local url=$1
     local expected_status=$2
     local description=$3
+    local api_key=${4:-""}
     
     print_status "Testing: $description"
     
-    response=$(curl -s -w "%{http_code}" -o /tmp/api_response "$url" 2>/dev/null)
+    # Add API key header if provided
+    if [ -n "$api_key" ]; then
+        response=$(curl -s -w "%{http_code}" -H "x-api-key: $api_key" -o /tmp/api_response "$url" 2>/dev/null)
+    else
+        response=$(curl -s -w "%{http_code}" -o /tmp/api_response "$url" 2>/dev/null)
+    fi
+    
     http_code=${response: -3}
     
     if [ "$http_code" = "$expected_status" ]; then
@@ -81,13 +88,24 @@ test_post_endpoint() {
     local data=$2
     local expected_status=$3
     local description=$4
+    local api_key=${5:-""}
     
     print_status "Testing: $description"
     
-    response=$(curl -s -w "%{http_code}" -X POST \
-        -H "Content-Type: application/json" \
-        -d "$data" \
-        -o /tmp/api_response "$url" 2>/dev/null)
+    # Add API key header if provided
+    if [ -n "$api_key" ]; then
+        response=$(curl -s -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: $api_key" \
+            -d "$data" \
+            -o /tmp/api_response "$url" 2>/dev/null)
+    else
+        response=$(curl -s -w "%{http_code}" -X POST \
+            -H "Content-Type: application/json" \
+            -d "$data" \
+            -o /tmp/api_response "$url" 2>/dev/null)
+    fi
+    
     http_code=${response: -3}
     
     if [ "$http_code" = "$expected_status" ]; then
@@ -219,41 +237,46 @@ echo "================================================================"
 echo "🧪 TESTING API ENDPOINTS"
 echo "================================================================"
 
+# Define API keys
+DEMO_API_KEY="demo_api_key_abcdefg"
+TEST_API_KEY="test_api_key_xyz"
+PRODUCTION_API_KEY="tracking_api_key_123456789"
+
 failed_tests=0
 
-# Test 1: Main endpoint
+# Test 1: Main endpoint (no API key needed)
 if ! test_endpoint "http://localhost:3001/" "200" "Main API endpoint"; then
     ((failed_tests++))
 fi
 
-# Test 2: Health check
+# Test 2: Health check (no API key needed)
 if ! test_endpoint "http://localhost:3001/health" "200" "Health check endpoint"; then
     ((failed_tests++))
 fi
 
-# Test 3: Users endpoint
-if ! test_endpoint "http://localhost:3001/api/users" "200" "Users API endpoint"; then
+# Test 3: Users endpoint (needs API key)
+if ! test_endpoint "http://localhost:3001/api/users" "200" "Users API endpoint" "$DEMO_API_KEY"; then
     ((failed_tests++))
 fi
 
-# Test 4: Create user
+# Test 4: Create user (needs API key with 'users' permission)
 user_data='{"name":"Test User","email":"test@example.com"}'
-if ! test_post_endpoint "http://localhost:3001/api/users" "$user_data" "201" "Create new user"; then
+if ! test_post_endpoint "http://localhost:3001/api/users" "$user_data" "201" "Create new user" "$PRODUCTION_API_KEY"; then
     ((failed_tests++))
 fi
 
-# Test 5: Track event
+# Test 5: Track event (needs API key)
 event_data='{"user_id":"test_user_123","event_type":"click","element_type":"image","page_url":"https://example.com/test","element_id":"test-image"}'
-if ! test_post_endpoint "http://localhost:3001/api/tracking/event" "$event_data" "201" "Track user event"; then
+if ! test_post_endpoint "http://localhost:3001/api/tracking/event" "$event_data" "201" "Track user event" "$PRODUCTION_API_KEY"; then
     ((failed_tests++))
 fi
 
-# Test 6: Analytics endpoints
-if ! test_endpoint "http://localhost:3001/api/analytics/clicks" "200" "Click analytics"; then
+# Test 6: Analytics endpoints (need API key)
+if ! test_endpoint "http://localhost:3001/api/analytics/clicks" "200" "Click analytics" "$DEMO_API_KEY"; then
     ((failed_tests++))
 fi
 
-if ! test_endpoint "http://localhost:3001/api/analytics/popular-services" "200" "Popular services analytics"; then
+if ! test_endpoint "http://localhost:3001/api/analytics/popular-services" "200" "Popular services analytics" "$DEMO_API_KEY"; then
     ((failed_tests++))
 fi
 
@@ -273,7 +296,6 @@ if [ $failed_tests -eq 0 ]; then
     print_success "🎉 ALL TESTS PASSED! ($passed_tests/$total_tests)"
     print_success "✅ API is working perfectly!"
     print_success "🌐 Server running at: http://localhost:3001"
-    print_success "📖 Demo page: frontend/demo.html"
     echo ""
     print_status "Press Ctrl+C to stop the server"
     
