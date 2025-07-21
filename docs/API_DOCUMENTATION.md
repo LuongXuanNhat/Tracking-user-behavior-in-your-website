@@ -16,7 +16,130 @@ http://localhost:3001/api
 
 ## Authentication
 
-Hiện tại API không yêu cầu authentication (có thể thêm sau).
+**🔐 API Key Required** - Tất cả endpoints (trừ `/` và `/health`) đều yêu cầu API key để truy cập.
+
+### 🔑 CÁCH LẤY API KEY:
+
+#### **Bước 1: Khởi động API server**
+
+```bash
+cd /path/to/your/project
+npm start
+```
+
+#### **Bước 2: Lấy danh sách API keys có sẵn**
+
+**Method 1: Command Line (Nhanh nhất)**
+
+```bash
+curl http://localhost:3001/api/keys
+```
+
+**Method 2: Browser**
+
+```
+http://localhost:3001/api/keys
+```
+
+**Response sẽ trả về:**
+
+```json
+{
+  "status": "success",
+  "message": "Available API keys for testing",
+  "data": {
+    "production": "tracking_api_key_123456789",
+    "demo": "demo_api_key_abcdefg",
+    "test": "test_api_key_xyz"
+  },
+  "usage": {
+    "header": "x-api-key: YOUR_API_KEY",
+    "query": "?api_key=YOUR_API_KEY",
+    "bearer": "Authorization: Bearer YOUR_API_KEY"
+  },
+  "quick_test": {
+    "demo_example": "curl -H 'x-api-key: demo_api_key_abcdefg' http://localhost:3001/api/analytics/clicks",
+    "production_example": "curl -H 'x-api-key: tracking_api_key_123456789' http://localhost:3001/api/users"
+  }
+}
+```
+
+#### **Bước 3: Copy API key phù hợp**
+
+- **🌟 Recommended**: `demo_api_key_abcdefg` (cho demo và test)
+- **🚀 Production**: `tracking_api_key_123456789` (full quyền)
+- **🧪 Testing**: `test_api_key_xyz` (cho development)
+
+### Cách sử dụng API Key:
+
+**Option 1: Header (Recommended)**
+
+```http
+x-api-key: demo_api_key_abcdefg
+```
+
+**Option 2: Bearer Token**
+
+```http
+Authorization: Bearer demo_api_key_abcdefg
+```
+
+**Option 3: Query Parameter**
+
+```http
+GET /api/users?api_key=demo_api_key_abcdefg
+```
+
+### API Keys Available:
+
+| Type           | API Key                      | Permissions                              |
+| -------------- | ---------------------------- | ---------------------------------------- |
+| **Production** | `tracking_api_key_123456789` | Full access (tracking, analytics, users) |
+| **Demo**       | `demo_api_key_abcdefg`       | Read-only (tracking, analytics)          |
+| **Test**       | `test_api_key_xyz`           | Full access with higher rate limit       |
+
+### Permissions by Key Type:
+
+- **Production**: ✅ Tracking, ✅ Analytics, ✅ Users (CRUD)
+- **Demo**: ✅ Tracking, ✅ Analytics, ❌ Users (Read only)
+- **Test**: ✅ All features for testing
+
+### 🧪 **VÍ DỤ TEST API NGAY LẬP TỨC:**
+
+#### **1. Test lấy API keys:**
+
+```bash
+curl http://localhost:3001/api/keys
+```
+
+#### **2. Test tracking event:**
+
+```bash
+curl -X POST http://localhost:3001/api/tracking/event \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: demo_api_key_abcdefg" \
+  -d '{
+    "user_id": "user_demo_123",
+    "event_type": "click",
+    "element_type": "image",
+    "page_url": "https://example.com/portfolio",
+    "element_id": "hero-banner"
+  }'
+```
+
+#### **3. Test analytics:**
+
+```bash
+curl -H "x-api-key: demo_api_key_abcdefg" \
+  http://localhost:3001/api/analytics/clicks
+```
+
+#### **4. Test users (chỉ production/test key):**
+
+```bash
+curl -H "x-api-key: tracking_api_key_123456789" \
+  http://localhost:3001/api/users
+```
 
 ---
 
@@ -360,6 +483,69 @@ GET /health
 }
 ```
 
+### Validate API Key
+
+```http
+GET /api/validate-key
+```
+
+**Headers:**
+
+```http
+x-api-key: YOUR_API_KEY
+```
+
+**Response (Valid):**
+
+```json
+{
+  "status": "success",
+  "message": "API key is valid",
+  "key_info": {
+    "type": "production",
+    "permissions": {
+      "tracking": true,
+      "analytics": true,
+      "users": true
+    }
+  }
+}
+```
+
+**Response (Invalid):**
+
+```json
+{
+  "status": "error",
+  "message": "Invalid API key"
+}
+```
+
+### Get Available API Keys
+
+```http
+GET /api/keys
+```
+
+**Response:**
+
+```json
+{
+  "status": "success",
+  "message": "Available API keys for testing",
+  "data": {
+    "production": "tracking_api_key_123456789",
+    "demo": "demo_api_key_abcdefg",
+    "test": "test_api_key_xyz"
+  },
+  "usage": {
+    "header": "x-api-key: YOUR_API_KEY",
+    "query": "?api_key=YOUR_API_KEY",
+    "bearer": "Authorization: Bearer YOUR_API_KEY"
+  }
+}
+```
+
 ---
 
 ## 🌐 CLIENT TRACKING SCRIPT
@@ -373,6 +559,7 @@ GET /health
   // Cấu hình
   window.userTrackingConfig = {
     apiUrl: "http://localhost:3001/api/tracking",
+    apiKey: "demo_api_key_abcdefg", // API key bắt buộc
     enabled: true,
     batchSize: 10,
     batchTimeout: 5000,
@@ -388,6 +575,17 @@ GET /health
   });
 </script>
 ```
+
+### Configuration Options:
+
+| Option         | Type    | Default                              | Description               |
+| -------------- | ------- | ------------------------------------ | ------------------------- |
+| `apiUrl`       | string  | `http://localhost:3001/api/tracking` | API endpoint URL          |
+| `apiKey`       | string  | **Required**                         | API key để authentication |
+| `enabled`      | boolean | `true`                               | Bật/tắt tracking          |
+| `batchSize`    | number  | `10`                                 | Số events gửi cùng lúc    |
+| `batchTimeout` | number  | `5000`                               | Thời gian gửi batch (ms)  |
+| `userId`       | string  | auto-generated                       | Custom user ID            |
 
 ### Các sự kiện được tự động track:
 
@@ -416,8 +614,28 @@ Tất cả API endpoints đều trả về format lỗi nhất quán:
 - `200` - Success
 - `201` - Created
 - `400` - Bad Request
+- `401` - Unauthorized (Invalid/Missing API Key)
+- `403` - Forbidden (Insufficient Permissions)
 - `404` - Not Found
 - `500` - Internal Server Error
+
+**Common API Key Errors:**
+
+```json
+{
+  "status": "error",
+  "message": "API key is required",
+  "error": "Missing API key in request headers (x-api-key) or query parameter (api_key)"
+}
+```
+
+```json
+{
+  "status": "error",
+  "message": "Invalid API key",
+  "error": "The provided API key is not valid"
+}
+```
 
 ---
 

@@ -1,22 +1,33 @@
 // routes/user.js
 import express from "express";
 import { UserAPI } from "../api/userApi.js";
+import { requireApiKey, requirePermission } from "../middlewares/apikey.js";
 
 const router = express.Router();
 
-// GET all users
-router.get("/", UserAPI.getAllUsers);
+// GET all users - chỉ cần API key
+router.get("/", requireApiKey, UserAPI.getAllUsers);
 
-// GET user by ID
-router.get("/:id", UserAPI.getUserById);
+// GET user by ID - chỉ cần API key
+router.get("/:id", requireApiKey, UserAPI.getUserById);
 
-// POST create new user
-router.post("/", UserAPI.createUser);
+// POST create new user - cần API key và permission 'users'
+router.post("/", requireApiKey, requirePermission("users"), UserAPI.createUser);
 
-// PUT update user
-router.put("/:id", UserAPI.updateUser);
+// PUT update user - cần API key và permission 'users'
+router.put(
+  "/:id",
+  requireApiKey,
+  requirePermission("users"),
+  UserAPI.updateUser
+);
 
-// DELETE user
-router.delete("/:id", UserAPI.deleteUser);
+// DELETE user - cần API key và permission 'users'
+router.delete(
+  "/:id",
+  requireApiKey,
+  requirePermission("users"),
+  UserAPI.deleteUser
+);
 
 export default router;
