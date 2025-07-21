@@ -15,7 +15,7 @@ Thư mục này chứa toàn bộ tài liệu hướng dẫn sử dụng User Be
 
 ### 📖 API Documentation
 
-- [`API_REFERENCE.md`](./API_REFERENCE.md) - Tài liệu API đầy đủ với examples
+- [`SETUP_AND_TEET.md`](./SETUP_AND_TEST.md) - Tài liệu API đầy đủ với examples
 
 ## 🎯 Hệ thống API Key đơn giản
 
