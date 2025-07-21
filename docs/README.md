@@ -18,6 +18,10 @@ Thư mục này chứa toàn bộ tài liệu hướng dẫn sử dụng User Be
 
 - [`API_DOCUMENTATION.md`](./API_DOCUMENTATION.md) - Tài liệu API đầy đủ với examples
 
+### 🔧 System Configuration
+
+- [`SYSTEM_CONFIGURATION.md`](./SYSTEM_CONFIGURATION.md) - Hướng dẫn cấu hình hệ thống chi tiết
+
 ## 🎯 Hệ thống API Key chuyên nghiệp
 
 Hệ thống hỗ trợ **2 phương thức quản lý API keys**:
