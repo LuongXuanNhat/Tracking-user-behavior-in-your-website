@@ -1,16 +1,22 @@
 // routes/user.js
-const express = require('express');
+import express from "express";
+import { UserAPI } from "../api/userApi.js";
+
 const router = express.Router();
 
-router.get('/', (req, res) => {
-  res.json([{ id: 1, name: 'Alice' }, { id: 2, name: 'Bob' }]);
-});
+// GET all users
+router.get("/", UserAPI.getAllUsers);
 
-router.post('/', (req, res) => {
-  const { name } = req.body;
-  if (!name) return res.status(400).json({ error: 'Name is required' });
+// GET user by ID
+router.get("/:id", UserAPI.getUserById);
 
-  res.status(201).json({ id: Date.now(), name });
-});
+// POST create new user
+router.post("/", UserAPI.createUser);
 
-module.exports = router;
+// PUT update user
+router.put("/:id", UserAPI.updateUser);
+
+// DELETE user
+router.delete("/:id", UserAPI.deleteUser);
+
+export default router;

@@ -1,6 +1,6 @@
 // server.js
-import app from './backend/app';
-import { createServer } from 'http';
+import app from "./backend/app.js";
+import { createServer } from "http";
 
 const PORT = 3001;
 
