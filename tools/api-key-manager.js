@@ -1,31 +1,44 @@
 #!/usr/bin/env node
 // tools/api-key-manager.js
-// CLI tool để quản lý API Keys
+// CLI tool để quản lý API Keys với Cassandra integration
 
 import { program } from "commander";
 import { ApiKey } from "../backend/app/models/ApiKey.js";
+import cassandraConnection from "../backend/config/database/init.js";
 import dotenv from "dotenv";
+import { v4 as uuidv4 } from "uuid";
 
 // Load environment variables
 dotenv.config();
 
-// Khởi tạo ApiKey system
-ApiKey.init();
+// Initialize Cassandra and ApiKey system
+async function initializeSystem() {
+  try {
+    await cassandraConnection.connect();
+    await ApiKey.initializeCassandra();
+    await ApiKey.loadFromCassandra();
+    console.log("✅ API Key system initialized with Cassandra");
+  } catch (error) {
+    console.error("❌ Failed to initialize system:", error);
+    console.log("⚠️  Falling back to file storage");
+    ApiKey.init();
+  }
+}
 
 program
   .name("api-key-manager")
-  .description("CLI tool for managing API keys")
+  .description("CLI tool for managing API keys with Cassandra")
   .version("1.0.0");
 
 // Tạo API key mới
 program
   .command("create")
   .description("Create a new API key")
-  .option("-n, --name <name>", "Website name")
+  .option("-n, --name <n>", "Website name")
   .option("-u, --url <url>", "Website URL")
   .option("-t, --type <type>", "Key type (demo|test|production)", "production")
   .option("-d, --description <description>", "Description")
-  .action((options) => {
+  .action(async (options) => {
     if (!options.name || !options.url) {
       console.error("❌ Website name and URL are required");
       console.log(
@@ -35,8 +48,10 @@ program
     }
 
     try {
-      const newKey = ApiKey.create({
-        websiteId: Date.now(),
+      await initializeSystem();
+
+      const newKey = await ApiKey.create({
+        websiteId: uuidv4(), // Generate proper UUID for websiteId
         websiteName: options.name,
         websiteUrl: options.url,
         type: options.type,

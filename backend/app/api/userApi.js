@@ -1,23 +1,7 @@
 // api/userApi.js
 // Logic xử lý API cho users
 
-// Sample users data
-let users = [
-  {
-    id: 1,
-    name: "Alice",
-    email: "alice@example.com",
-    created_at: new Date().toISOString(),
-  },
-  {
-    id: 2,
-    name: "Bob",
-    email: "bob@example.com",
-    created_at: new Date().toISOString(),
-  },
-];
-
-let userCounter = 3;
+import { User } from "../models/User.js";
 
 export class UserAPI {
   /**
@@ -25,9 +9,11 @@ export class UserAPI {
    */
   static async getAllUsers(req, res) {
     try {
+      const users = await User.findAll();
+
       res.json({
         status: "success",
-        data: users,
+        data: users.map((user) => user.toJSON()),
       });
     } catch (error) {
       res.status(500).json({
@@ -43,8 +29,8 @@ export class UserAPI {
    */
   static async getUserById(req, res) {
     try {
-      const userId = parseInt(req.params.id);
-      const user = users.find((u) => u.id === userId);
+      const userId = req.params.id;
+      const user = await User.findById(userId);
 
       if (!user) {
         return res.status(404).json({
@@ -55,7 +41,7 @@ export class UserAPI {
 
       res.json({
         status: "success",
-        data: user,
+        data: user.toJSON(),
       });
     } catch (error) {
       res.status(500).json({
@@ -81,7 +67,7 @@ export class UserAPI {
       }
 
       // Check if email already exists
-      const existingUser = users.find((u) => u.email === email);
+      const existingUser = await User.findByEmail(email);
       if (existingUser) {
         return res.status(400).json({
           status: "error",
@@ -89,19 +75,11 @@ export class UserAPI {
         });
       }
 
-      const newUser = {
-        id: userCounter++,
-        name,
-        email,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      users.push(newUser);
+      const newUser = await User.create({ name, email });
 
       res.status(201).json({
         status: "success",
-        data: newUser,
+        data: newUser.toJSON(),
       });
     } catch (error) {
       res.status(500).json({
@@ -117,11 +95,11 @@ export class UserAPI {
    */
   static async updateUser(req, res) {
     try {
-      const userId = parseInt(req.params.id);
+      const userId = req.params.id;
       const { name, email } = req.body;
 
-      const userIndex = users.findIndex((u) => u.id === userId);
-      if (userIndex === -1) {
+      const user = await User.findById(userId);
+      if (!user) {
         return res.status(404).json({
           status: "error",
           message: "User not found",
@@ -129,10 +107,8 @@ export class UserAPI {
       }
 
       // Check if email already exists (for other users)
-      if (email) {
-        const existingUser = users.find(
-          (u) => u.email === email && u.id !== userId
-        );
+      if (email && email !== user.email) {
+        const existingUser = await User.findByEmail(email);
         if (existingUser) {
           return res.status(400).json({
             status: "error",
@@ -142,13 +118,11 @@ export class UserAPI {
       }
 
       // Update user
-      if (name) users[userIndex].name = name;
-      if (email) users[userIndex].email = email;
-      users[userIndex].updated_at = new Date().toISOString();
+      const updatedUser = await user.update({ name, email });
 
       res.json({
         status: "success",
-        data: users[userIndex],
+        data: updatedUser.toJSON(),
       });
     } catch (error) {
       res.status(500).json({
@@ -164,22 +138,22 @@ export class UserAPI {
    */
   static async deleteUser(req, res) {
     try {
-      const userId = parseInt(req.params.id);
-      const userIndex = users.findIndex((u) => u.id === userId);
+      const userId = req.params.id;
+      const user = await User.findById(userId);
 
-      if (userIndex === -1) {
+      if (!user) {
         return res.status(404).json({
           status: "error",
           message: "User not found",
         });
       }
 
-      const deletedUser = users.splice(userIndex, 1)[0];
+      await user.delete();
 
       res.json({
         status: "success",
         message: "User deleted successfully",
-        data: deletedUser,
+        data: user.toJSON(),
       });
     } catch (error) {
       res.status(500).json({

@@ -9,14 +9,14 @@ export class WebsiteAPI {
    */
   static async getAllWebsites(req, res) {
     try {
-      const websites = Website.findAll();
+      const websites = await Website.findAll();
 
       res.json({
         status: "success",
         data: {
-          websites,
+          websites: websites.map((w) => w.toJSON()),
           total: websites.length,
-          stats: Website.getStats(),
+          stats: await Website.getStats(),
         },
       });
     } catch (error) {
@@ -73,7 +73,7 @@ export class WebsiteAPI {
       const apiKey = Website.generateApiKey(name, type);
 
       // Create website
-      const newWebsite = Website.create({
+      const newWebsite = await Website.create({
         name,
         url,
         api_key: apiKey,
@@ -86,7 +86,7 @@ export class WebsiteAPI {
         status: "success",
         message: `Website '${name}' created successfully`,
         data: {
-          website: newWebsite,
+          website: newWebsite.toJSON(),
           integration_guide: {
             javascript: `
 // Add to your HTML <head>
@@ -129,7 +129,7 @@ export class WebsiteAPI {
   static async getWebsiteById(req, res) {
     try {
       const { id } = req.params;
-      const website = Website.findById(id);
+      const website = await Website.findById(id);
 
       if (!website) {
         return res.status(404).json({
@@ -140,7 +140,7 @@ export class WebsiteAPI {
 
       res.json({
         status: "success",
-        data: website,
+        data: website.toJSON(),
       });
     } catch (error) {
       res.status(500).json({
@@ -159,7 +159,15 @@ export class WebsiteAPI {
       const { id } = req.params;
       const { name, url, description, status, type } = req.body;
 
-      const updatedWebsite = Website.update(id, {
+      const website = await Website.findById(id);
+      if (!website) {
+        return res.status(404).json({
+          status: "error",
+          message: "Website not found",
+        });
+      }
+
+      const updatedWebsite = await website.update({
         name,
         url,
         description,
@@ -167,17 +175,10 @@ export class WebsiteAPI {
         type,
       });
 
-      if (!updatedWebsite) {
-        return res.status(404).json({
-          status: "error",
-          message: "Website not found",
-        });
-      }
-
       res.json({
         status: "success",
         message: "Website updated successfully",
-        data: updatedWebsite,
+        data: updatedWebsite.toJSON(),
       });
     } catch (error) {
       res.status(500).json({
@@ -194,19 +195,21 @@ export class WebsiteAPI {
   static async deleteWebsite(req, res) {
     try {
       const { id } = req.params;
-      const deletedWebsite = Website.delete(id);
+      const website = await Website.findById(id);
 
-      if (!deletedWebsite) {
+      if (!website) {
         return res.status(404).json({
           status: "error",
           message: "Website not found",
         });
       }
 
+      await website.delete();
+
       res.json({
         status: "success",
         message: "Website deleted successfully",
-        data: deletedWebsite,
+        data: website.toJSON(),
       });
     } catch (error) {
       res.status(500).json({
@@ -223,7 +226,7 @@ export class WebsiteAPI {
   static async regenerateApiKey(req, res) {
     try {
       const { id } = req.params;
-      const website = Website.findById(id);
+      const website = await Website.findById(id);
 
       if (!website) {
         return res.status(404).json({
@@ -233,10 +236,11 @@ export class WebsiteAPI {
       }
 
       // Generate new API key
+      const oldApiKey = website.api_key;
       const newApiKey = Website.generateApiKey(website.name, website.type);
 
       // Update website
-      const updatedWebsite = Website.update(id, {
+      const updatedWebsite = await website.update({
         api_key: newApiKey,
       });
 
@@ -244,8 +248,8 @@ export class WebsiteAPI {
         status: "success",
         message: "API key regenerated successfully",
         data: {
-          website: updatedWebsite,
-          old_api_key: website.api_key,
+          website: updatedWebsite.toJSON(),
+          old_api_key: oldApiKey,
           new_api_key: newApiKey,
           warning:
             "⚠️  Update your website code with the new API key. Old key is now invalid!",
@@ -265,7 +269,7 @@ export class WebsiteAPI {
    */
   static async getWebsiteStats(req, res) {
     try {
-      const stats = Website.getStats();
+      const stats = await Website.getStats();
 
       res.json({
         status: "success",

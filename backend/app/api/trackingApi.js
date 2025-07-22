@@ -1,7 +1,9 @@
 // api/trackingApi.js
 // Logic xử lý API cho tracking
 
-// In-memory storage for demo (thực tế sẽ dùng Cassandra)
+import { UserEvent } from "../models/User.js";
+
+// In-memory fallback storage for analytics
 let userEvents = [];
 let eventCounter = 1;
 
@@ -58,7 +60,21 @@ export class TrackingAPI {
         });
       }
 
-      const newEvent = {
+      // Create event using Cassandra
+      const newEvent = await UserEvent.create({
+        user_id,
+        event_type,
+        element_type,
+        page_url,
+        element_id,
+        metadata,
+        ip_address: req.ip,
+        user_agent: req.get("User-Agent"),
+        session_id: req.get("X-Session-ID") || req.sessionID,
+      });
+
+      // Also store in memory for analytics fallback
+      const memoryEvent = {
         id: eventCounter++,
         user_id,
         event_type,
@@ -70,8 +86,7 @@ export class TrackingAPI {
         ip_address: req.ip,
         user_agent: req.get("User-Agent"),
       };
-
-      userEvents.push(newEvent);
+      userEvents.push(memoryEvent);
 
       res.status(201).json({
         status: "success",

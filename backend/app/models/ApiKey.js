@@ -1,20 +1,159 @@
 // models/ApiKey.js
-// Model để quản lý API Keys động
+// Model để quản lý API Keys với Cassandra integration
 
 import crypto from "crypto";
 import fs from "fs";
 import path from "path";
+import cassandraConnection from "../../config/database/init.js";
+import { v4 as uuidv4 } from "uuid";
 
-// File để lưu trữ API keys (cho demo - thực tế sẽ dùng Cassandra/MongoDB)
+// File để lưu trữ API keys (fallback - primary storage là Cassandra)
 const DATA_FILE = path.join(process.cwd(), "data", "api-keys.json");
 
-// In-memory storage cho demo
+// In-memory storage cho fallback
 let apiKeys = new Map(); // Map<apiKey, keyData>
 let keyCounter = 1;
 
 export class ApiKey {
   /**
-   * Load dữ liệu từ file
+   * Initialize Cassandra table nếu chưa có
+   */
+  static async initializeCassandra() {
+    try {
+      const client = cassandraConnection.getClient();
+
+      // Create api_keys table if not exists
+      const createTableQuery = `
+        CREATE TABLE IF NOT EXISTS api_keys (
+          id UUID PRIMARY KEY,
+          api_key TEXT,
+          website_id BIGINT,
+          website_name TEXT,
+          website_url TEXT,
+          type TEXT,
+          description TEXT,
+          owner TEXT,
+          status TEXT,
+          permissions MAP<TEXT, TEXT>,
+          created_at TIMESTAMP,
+          updated_at TIMESTAMP,
+          last_used TIMESTAMP,
+          usage_count BIGINT,
+          expires_at TIMESTAMP
+        )
+      `;
+
+      await client.execute(createTableQuery);
+
+      // Create index on api_key for fast lookups
+      const createIndexQuery = `
+        CREATE INDEX IF NOT EXISTS api_keys_api_key_idx 
+        ON api_keys (api_key)
+      `;
+
+      await client.execute(createIndexQuery);
+
+      console.log("✅ ApiKey Cassandra tables initialized");
+    } catch (error) {
+      console.error("❌ Failed to initialize ApiKey Cassandra tables:", error);
+      // Fallback to file storage
+      this.loadData();
+    }
+  }
+
+  /**
+   * Load dữ liệu từ Cassandra
+   */
+  static async loadFromCassandra() {
+    try {
+      const client = cassandraConnection.getClient();
+      const query = "SELECT * FROM api_keys ALLOW FILTERING";
+      const result = await client.execute(query);
+
+      apiKeys.clear();
+      result.rows.forEach((row) => {
+        const keyData = {
+          id: row.id.toString(),
+          apiKey: row.api_key,
+          websiteId: row.website_id,
+          websiteName: row.website_name,
+          websiteUrl: row.website_url,
+          type: row.type,
+          description: row.description,
+          owner: row.owner,
+          status: row.status,
+          permissions: row.permissions || {},
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+          last_used: row.last_used,
+          usage_count: row.usage_count || 0,
+          expires_at: row.expires_at,
+        };
+        apiKeys.set(row.api_key, keyData);
+      });
+
+      console.log(`✅ Loaded ${apiKeys.size} API keys from Cassandra`);
+    } catch (error) {
+      console.error(
+        "❌ Failed to load from Cassandra, fallback to file:",
+        error
+      );
+      this.loadData();
+    }
+  }
+
+  /**
+   * Save API key to Cassandra
+   */
+  static async saveToCassandra(keyData) {
+    try {
+      const client = cassandraConnection.getClient();
+
+      // Convert permissions object to simple map
+      const permissionsMap = {};
+      Object.keys(keyData.permissions).forEach((key) => {
+        permissionsMap[key] = String(keyData.permissions[key]);
+      });
+
+      const query = `
+        INSERT INTO api_keys (
+          id, api_key, website_id, website_name, website_url,
+          type, description, owner, status, permissions,
+          created_at, updated_at, last_used, usage_count, expires_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      const params = [
+        keyData.id, // id (UUID) - use the UUID from keyData
+        keyData.apiKey, // api_key (TEXT)
+        keyData.websiteId, // website_id (UUID)
+        keyData.websiteName, // website_name (TEXT)
+        keyData.websiteUrl, // website_url (TEXT)
+        keyData.type, // type (TEXT)
+        keyData.description, // description (TEXT)
+        keyData.owner, // owner (TEXT)
+        keyData.status, // status (TEXT)
+        permissionsMap, // permissions (MAP)
+        new Date(keyData.created_at), // created_at (TIMESTAMP)
+        new Date(keyData.updated_at), // updated_at (TIMESTAMP)
+        keyData.last_used ? new Date(keyData.last_used) : null, // last_used (TIMESTAMP)
+        parseInt(keyData.usage_count) || 0, // usage_count (BIGINT)
+        keyData.expires_at ? new Date(keyData.expires_at) : null, // expires_at (TIMESTAMP)
+      ];
+
+      await client.execute(query, params, { prepare: true });
+      console.log(
+        `✅ API key saved to Cassandra: ${keyData.apiKey.substring(0, 20)}...`
+      );
+      return true;
+    } catch (error) {
+      console.error("❌ Failed to save to Cassandra:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Load dữ liệu từ file (fallback)
    */
   static loadData() {
     try {
@@ -66,6 +205,7 @@ export class ApiKey {
       console.error("❌ Error saving data:", error.message);
     }
   }
+
   /**
    * Sinh API key mới
    */
@@ -76,9 +216,9 @@ export class ApiKey {
   }
 
   /**
-   * Tạo API key mới cho website
+   * Tạo API key mới cho website với Cassandra integration
    */
-  static create(keyData) {
+  static async create(keyData) {
     const {
       websiteId,
       websiteName,
@@ -92,7 +232,7 @@ export class ApiKey {
     const apiKey = this.generateApiKey();
 
     const newKey = {
-      id: keyCounter++,
+      id: uuidv4(), // Use UUID instead of counter for Cassandra compatibility
       apiKey,
       websiteId,
       websiteName,
@@ -115,23 +255,69 @@ export class ApiKey {
       expires_at: this.getExpirationDate(type),
     };
 
+    // Save to in-memory cache
     apiKeys.set(apiKey, newKey);
 
-    // Auto save after create
-    this.saveData();
+    // Try to save to Cassandra first
+    const cassandraSaved = await this.saveToCassandra(newKey);
+
+    // Fallback to file if Cassandra fails
+    if (!cassandraSaved) {
+      console.log("⚠️  Cassandra save failed, falling back to file storage");
+      this.saveData();
+    }
 
     return newKey;
   }
 
   /**
-   * Tìm API key và thông tin
+   * Tìm API key từ Cassandra hoặc cache
    */
-  static findByKey(apiKey) {
-    return apiKeys.get(apiKey) || null;
+  static async findByKey(apiKey) {
+    // Check in-memory cache first
+    let keyData = apiKeys.get(apiKey);
+
+    if (!keyData) {
+      // Try to find in Cassandra
+      try {
+        const client = cassandraConnection.getClient();
+        const query =
+          "SELECT * FROM api_keys WHERE api_key = ? LIMIT 1 ALLOW FILTERING";
+        const result = await client.execute(query, [apiKey], { prepare: true });
+
+        if (result.rows.length > 0) {
+          const row = result.rows[0];
+          keyData = {
+            id: row.id.toString(),
+            apiKey: row.api_key,
+            websiteId: row.website_id,
+            websiteName: row.website_name,
+            websiteUrl: row.website_url,
+            type: row.type,
+            description: row.description,
+            owner: row.owner,
+            status: row.status,
+            permissions: row.permissions || {},
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            last_used: row.last_used,
+            usage_count: row.usage_count || 0,
+            expires_at: row.expires_at,
+          };
+
+          // Cache it for future use
+          apiKeys.set(apiKey, keyData);
+        }
+      } catch (error) {
+        console.error("❌ Error finding API key in Cassandra:", error);
+      }
+    }
+
+    return keyData || null;
   }
 
   /**
-   * Kiểm tra API key có hợp lệ không
+   * Kiểm tra API key có hợp lệ không với Cassandra integration
    */
   static async validate(apiKey) {
     // Fallback to .env keys for development
@@ -153,7 +339,7 @@ export class ApiKey {
             permissions: {
               tracking: true,
               analytics: true,
-              users: keyType !== "demo", // Consistent với logic dynamic keys
+              users: keyType !== "demo",
             },
             status: "active",
           },
@@ -161,172 +347,34 @@ export class ApiKey {
       }
     }
 
-    const keyData = this.findByKey(apiKey);
+    const keyData = await this.findByKey(apiKey);
 
     if (!keyData) {
       return { valid: false, reason: "API key not found" };
     }
 
+    // Kiểm tra status
     if (keyData.status !== "active") {
       return { valid: false, reason: "API key is disabled" };
     }
 
+    // Kiểm tra expiration
     if (keyData.expires_at && new Date() > new Date(keyData.expires_at)) {
       return { valid: false, reason: "API key has expired" };
     }
 
-    // Cập nhật thống kê sử dụng
-    await this.updateUsage(apiKey);
+    // Update usage stats
+    keyData.last_used = new Date().toISOString();
+    keyData.usage_count = (keyData.usage_count || 0) + 1;
+
+    // Save updated stats
+    apiKeys.set(apiKey, keyData);
 
     return { valid: true, key: keyData };
   }
 
   /**
-   * Cập nhật thống kê sử dụng
-   */
-  static async updateUsage(apiKey) {
-    const keyData = apiKeys.get(apiKey);
-    if (keyData) {
-      keyData.last_used = new Date().toISOString();
-      keyData.usage_count += 1;
-      keyData.updated_at = new Date().toISOString();
-    }
-  }
-
-  /**
-   * Vô hiệu hóa API key
-   */
-  static disable(apiKey, reason = "Manual disable") {
-    const keyData = apiKeys.get(apiKey);
-    if (keyData) {
-      keyData.status = "disabled";
-      keyData.disabled_reason = reason;
-      keyData.disabled_at = new Date().toISOString();
-      keyData.updated_at = new Date().toISOString();
-
-      // Auto save after disable
-      this.saveData();
-
-      return true;
-    }
-    return false;
-  }
-
-  /**
-   * Gia hạn API key
-   */
-  static extend(apiKey, extensionDays = 365) {
-    const keyData = apiKeys.get(apiKey);
-    if (keyData) {
-      const currentExpiry = keyData.expires_at
-        ? new Date(keyData.expires_at)
-        : new Date();
-      const newExpiry = new Date(currentExpiry);
-      newExpiry.setDate(newExpiry.getDate() + extensionDays);
-
-      keyData.expires_at = newExpiry.toISOString();
-      keyData.updated_at = new Date().toISOString();
-
-      // Auto save after extend
-      this.saveData();
-
-      return keyData;
-    }
-    return null;
-  }
-
-  /**
-   * Lấy tất cả API keys (cho admin)
-   */
-  static getAll(filters = {}) {
-    let result = Array.from(apiKeys.values());
-
-    if (filters.type) {
-      result = result.filter((key) => key.type === filters.type);
-    }
-
-    if (filters.status) {
-      result = result.filter((key) => key.status === filters.status);
-    }
-
-    if (filters.websiteId) {
-      result = result.filter((key) => key.websiteId === filters.websiteId);
-    }
-
-    // Ẩn API key thực trong response
-    return result.map((key) => ({
-      ...key,
-      apiKey: this.maskApiKey(key.apiKey),
-    }));
-  }
-
-  /**
-   * Lấy tất cả API keys với full data (cho internal use)
-   */
-  static getAllInternal(filters = {}) {
-    let result = Array.from(apiKeys.values());
-
-    if (filters.type) {
-      result = result.filter((key) => key.type === filters.type);
-    }
-
-    if (filters.status) {
-      result = result.filter((key) => key.status === filters.status);
-    }
-
-    if (filters.websiteId) {
-      result = result.filter((key) => key.websiteId === filters.websiteId);
-    }
-
-    return result;
-  }
-
-  /**
-   * Che giấu API key để hiển thị
-   */
-  static maskApiKey(apiKey) {
-    if (!apiKey || apiKey.length < 8) return "****";
-    return apiKey.substring(0, 8) + "*".repeat(apiKey.length - 8);
-  }
-
-  /**
-   * Lấy rate limit mặc định theo loại
-   */
-  static getDefaultRateLimit(type) {
-    const limits = {
-      demo: { requests: 100, window: 3600 }, // 100 requests/hour
-      test: { requests: 1000, window: 3600 }, // 1000 requests/hour
-      production: { requests: 10000, window: 3600 }, // 10000 requests/hour
-    };
-    return limits[type] || limits.production;
-  }
-
-  /**
-   * Lấy ngày hết hạn theo loại
-   */
-  static getExpirationDate(type) {
-    if (type === "demo") {
-      // Demo keys hết hạn sau 30 ngày
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 30);
-      return expiry.toISOString();
-    }
-
-    if (type === "test") {
-      // Test keys hết hạn sau 90 ngày
-      const expiry = new Date();
-      expiry.setDate(expiry.getDate() + 90);
-      return expiry.toISOString();
-    }
-
-    // Production keys hết hạn sau 1 năm
-    const expiry = new Date();
-    expiry.setFullYear(expiry.getFullYear() + 1);
-    return expiry.toISOString();
-  }
-
-  /**
-   * Xác định loại key từ .env (fallback)
+   * Get env key type helper
    */
   static getEnvKeyType(apiKey) {
     if (apiKey === process.env.DEMO_API_KEY) return "demo";
@@ -336,57 +384,102 @@ export class ApiKey {
   }
 
   /**
-   * Khởi tạo dữ liệu mẫu cho development
+   * Get default rate limit
    */
-  static initSampleData() {
-    // Load dữ liệu có sẵn trước
-    this.loadData();
-
-    if (process.env.NODE_ENV === "development" && apiKeys.size === 0) {
-      console.log("🔄 Initializing sample API keys...");
-
-      // Tạo một số API keys mẫu
-      this.create({
-        websiteId: 1,
-        websiteName: "Example Website",
-        websiteUrl: "https://example.com",
-        type: "production",
-        description: "Sample production key",
-        owner: "admin",
-      });
-
-      this.create({
-        websiteId: 2,
-        websiteName: "Demo Site",
-        websiteUrl: "https://demo.example.com",
-        type: "demo",
-        description: "Demo website key",
-        owner: "demo_user",
-      });
-
-      this.create({
-        websiteId: 3,
-        websiteName: "Test Environment",
-        websiteUrl: "https://test.example.com",
-        type: "test",
-        description: "Test environment key",
-        owner: "developer",
-      });
-
-      console.log("✅ Sample API keys initialized");
-    } else if (apiKeys.size > 0) {
-      console.log(`✅ Loaded ${apiKeys.size} existing API keys`);
-    }
+  static getDefaultRateLimit(type) {
+    const limits = {
+      demo: 100,
+      test: 1000,
+      production: 10000,
+    };
+    return limits[type] || 1000;
   }
 
   /**
-   * Khởi tạo hệ thống (gọi từ bất kỳ đâu)
+   * Get expiration date
+   */
+  static getExpirationDate(type) {
+    const now = new Date();
+    const expirationDays = {
+      demo: 30,
+      test: 90,
+      production: 365,
+    };
+
+    const days = expirationDays[type] || 365;
+    now.setDate(now.getDate() + days);
+    return now.toISOString();
+  }
+
+  /**
+   * Initialize system (for backward compatibility)
    */
   static init() {
     this.loadData();
-    return this;
+  }
+
+  /**
+   * Get all API keys
+   */
+  static getAll(filters = {}) {
+    let keys = Array.from(apiKeys.values());
+
+    if (filters.type) {
+      keys = keys.filter((key) => key.type === filters.type);
+    }
+
+    if (filters.status) {
+      keys = keys.filter((key) => key.status === filters.status);
+    }
+
+    if (filters.websiteId) {
+      keys = keys.filter((key) => key.websiteId === filters.websiteId);
+    }
+
+    return keys;
+  }
+
+  /**
+   * Disable API key
+   */
+  static disable(apiKey, reason = "Disabled by admin") {
+    const keyData = apiKeys.get(apiKey);
+    if (keyData) {
+      keyData.status = "disabled";
+      keyData.disabled_reason = reason;
+      keyData.disabled_at = new Date().toISOString();
+      this.saveData();
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Extend API key
+   */
+  static extend(apiKey, extensionDays = 365) {
+    const keyData = apiKeys.get(apiKey);
+    if (keyData) {
+      const currentExpiry = new Date(keyData.expires_at);
+      currentExpiry.setDate(currentExpiry.getDate() + extensionDays);
+      keyData.expires_at = currentExpiry.toISOString();
+      keyData.updated_at = new Date().toISOString();
+      this.saveData();
+      return keyData;
+    }
+    return null;
+  }
+
+  /**
+   * Mask API key for display
+   */
+  static maskApiKey(apiKey) {
+    if (!apiKey || apiKey.length < 8) return "****";
+    return apiKey.substring(0, 8) + "..." + apiKey.substring(apiKey.length - 4);
+  }
+
+  // Getter for accessing the Map (for compatibility)
+  static get apiKeys() {
+    return apiKeys;
   }
 }
-
-// Khởi tạo dữ liệu mẫu khi import
-ApiKey.initSampleData();

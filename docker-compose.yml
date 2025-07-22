@@ -1,15 +1,11 @@
-version: '3.8'
+version: "3.8"
 
 services:
   cassandra:
     image: cassandra:4.1
     container_name: cassandra_user_logs
     ports:
-      - "9042:9042"
-      - "7000:7000"
-      - "7001:7001"
-      - "7199:7199"
-      - "9160:9160"
+      - "9042:9042" # CQL port only
     environment:
       - CASSANDRA_CLUSTER_NAME=UserLogCluster
       - CASSANDRA_DC=datacenter1

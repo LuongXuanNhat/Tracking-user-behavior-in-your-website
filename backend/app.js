@@ -29,7 +29,6 @@ import analyticsRoutes from "./app/routes/analytics.js";
 import websiteRoutes from "./app/routes/website.js";
 import apiKeyRoutes from "./app/routes/apikey.js";
 import { getValidApiKeys } from "./app/middlewares/apikey.js";
-import { Website } from "./app/models/Website.js";
 
 app.use("/api/users", userRoutes);
 app.use("/api/tracking", trackingRoutes);

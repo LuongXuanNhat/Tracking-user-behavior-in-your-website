@@ -20,10 +20,12 @@
     "test": "tests"
   },
   "dependencies": {
+    "cassandra-driver": "^4.8.0",
     "commander": "^12.1.0",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",

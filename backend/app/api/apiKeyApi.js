@@ -2,6 +2,7 @@
 // API để quản lý API Keys
 
 import { ApiKey } from "../models/ApiKey.js";
+import { v4 as uuidv4 } from "uuid";
 
 /**
  * Tạo API key mới
@@ -46,9 +47,9 @@ export const createApiKey = async (req, res) => {
       });
     }
 
-    // Tạo API key
-    const newKey = ApiKey.create({
-      websiteId: Date.now(), // Tạm thời dùng timestamp
+    // Tạo API key với Cassandra integration
+    const newKey = await ApiKey.create({
+      websiteId: uuidv4(), // Generate proper UUID for websiteId
       websiteName,
       websiteUrl,
       type,
