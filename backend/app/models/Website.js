@@ -3,7 +3,7 @@
 
 import cassandraConnection from "../../config/database/init.js";
 import { v4 as uuidv4 } from "uuid";
-import { types } from "cassandra-driver";
+import cassandra from "cassandra-driver";
 
 export class Website {
   constructor(data) {
@@ -20,16 +20,30 @@ export class Website {
     this.last_used = data.last_used || null;
     this.usage_count = data.usage_count || 0;
 
-    // Initialize permissions properly
+    // Initialize permissions properly - ensure it's always an object
+    const defaultPermissions = {
+      tracking: "true",
+      analytics: "true",
+      users: this.type !== "demo" ? "true" : "false",
+    };
+
     if (data.permissions) {
-      this.permissions = data.permissions;
+      // If permissions is a Map (from Cassandra), convert to object
+      if (data.permissions instanceof Map) {
+        this.permissions = Object.fromEntries(data.permissions);
+      } else if (
+        typeof data.permissions === "object" &&
+        !Array.isArray(data.permissions)
+      ) {
+        this.permissions = { ...defaultPermissions, ...data.permissions };
+      } else {
+        this.permissions = defaultPermissions;
+      }
     } else {
-      this.permissions = {
-        tracking: "true",
-        analytics: "true",
-        users: this.type !== "demo" ? "true" : "false",
-      };
+      this.permissions = defaultPermissions;
     }
+
+    console.log("Constructor permissions:", this.permissions);
   }
 
   /**
@@ -47,8 +61,31 @@ export class Website {
 
       const client = cassandraConnection.getClient();
       const query =
-        "INSERT INTO user_logs.websites (id, name, url, api_key, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"; // Convert permissions object to Map for Cassandra
-      const permissionsMap = new Map(Object.entries(this.permissions));
+        "INSERT INTO user_logs.websites (id, name, url, api_key, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+
+      // Convert permissions object to Map for Cassandra, ensure it's not undefined
+      const permissionsToSave = this.permissions || {
+        tracking: "true",
+        analytics: "true",
+        users: "true",
+      };
+
+      // Ensure permissionsToSave is an object before calling Object.entries
+      let permissionsMap;
+      if (
+        permissionsToSave &&
+        typeof permissionsToSave === "object" &&
+        !Array.isArray(permissionsToSave)
+      ) {
+        permissionsMap = new Map(Object.entries(permissionsToSave));
+      } else {
+        // Fallback to default permissions
+        permissionsMap = new Map([
+          ["tracking", "true"],
+          ["analytics", "true"],
+          ["users", "true"],
+        ]);
+      }
       console.log("Permissions as Map:", permissionsMap);
 
       const params = [
@@ -63,15 +100,6 @@ export class Website {
 
       await client.execute(query, params, {
         prepare: true,
-        hints: [
-          null, // id: UUID - auto-detected
-          null, // name: TEXT - auto-detected
-          null, // url: TEXT - auto-detected
-          null, // api_key: TEXT - auto-detected
-          types.datatypes.map, // permissions: MAP<TEXT,TEXT>
-          null, // created_at: TIMESTAMP - auto-detected
-          null, // updated_at: TIMESTAMP - auto-detected
-        ],
       });
 
       console.log("Website created successfully!");
@@ -87,7 +115,8 @@ export class Website {
   static async findByApiKey(apiKey) {
     try {
       const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM websites WHERE api_key = ? ALLOW FILTERING";
+      const query =
+        "SELECT * FROM user_logs.websites WHERE api_key = ? ALLOW FILTERING";
       const result = await client.execute(query, [apiKey], { prepare: true });
 
       if (result.rows.length === 0) return null;
@@ -104,8 +133,8 @@ export class Website {
   static async findAll(limit = 100) {
     try {
       const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM websites LIMIT ?";
-      const result = await client.execute(query, [limit]);
+      const query = "SELECT * FROM user_logs.websites LIMIT ?";
+      const result = await client.execute(query, [limit], { prepare: true });
 
       return result.rows.map((row) => new Website(row));
     } catch (error) {
@@ -120,8 +149,8 @@ export class Website {
   static async findById(id) {
     try {
       const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM websites WHERE id = ?";
-      const result = await client.execute(query, [id]);
+      const query = "SELECT * FROM user_logs.websites WHERE id = ?";
+      const result = await client.execute(query, [id], { prepare: true });
 
       if (result.rows.length === 0) return null;
       return new Website(result.rows[0]);
@@ -172,8 +201,10 @@ export class Website {
       values.push(this.updated_at);
       values.push(this.id);
 
-      const query = `UPDATE websites SET ${fields.join(", ")} WHERE id = ?`;
-      await client.execute(query, values);
+      const query = `UPDATE user_logs.websites SET ${fields.join(
+        ", "
+      )} WHERE id = ?`;
+      await client.execute(query, values, { prepare: true });
 
       return this;
     } catch (error) {
@@ -188,8 +219,8 @@ export class Website {
   async delete() {
     try {
       const client = cassandraConnection.getClient();
-      const query = "DELETE FROM websites WHERE id = ?";
-      await client.execute(query, [this.id]);
+      const query = "DELETE FROM user_logs.websites WHERE id = ?";
+      await client.execute(query, [this.id], { prepare: true });
       return true;
     } catch (error) {
       console.error("Error deleting website:", error);
@@ -206,12 +237,12 @@ export class Website {
       const now = new Date();
 
       const query = `
-        UPDATE websites 
+        UPDATE user_logs.websites 
         SET last_used = ?, usage_count = usage_count + 1, updated_at = ?
         WHERE api_key = ?
       `;
 
-      await client.execute(query, [now, now, apiKey]);
+      await client.execute(query, [now, now, apiKey], { prepare: true });
       return await this.findByApiKey(apiKey);
     } catch (error) {
       console.error("Error updating last used:", error);

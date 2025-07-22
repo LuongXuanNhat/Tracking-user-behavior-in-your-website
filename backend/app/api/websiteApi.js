@@ -73,7 +73,7 @@ export class WebsiteAPI {
       const apiKey = Website.generateApiKey(name, type);
 
       // Create website
-      const newWebsite = await Website.create({
+      const newWebsite = new Website({
         name,
         url,
         api_key: apiKey,
@@ -81,6 +81,8 @@ export class WebsiteAPI {
         description,
         owner,
       });
+
+      await newWebsite.create();
 
       res.status(201).json({
         status: "success",

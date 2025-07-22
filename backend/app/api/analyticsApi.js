@@ -1,21 +1,38 @@
 // api/analyticsApi.js
 // Logic xử lý API cho analytics
 
-import { TrackingAPI } from "./trackingApi.js";
+import cassandraConnection from "../../config/database/init.js";
 
 export class AnalyticsAPI {
   /**
-   * Thống kê lượt click theo element type (ảnh, bài đánh giá, bài blog)
+   * Thống kê lượt click theo element type
    */
   static async getClickAnalytics(req, res) {
     try {
       const { start_date, end_date, element_type } = req.query;
+      const client = cassandraConnection.getClient();
 
-      // Lấy data thật từ tracking events
-      const allEvents = TrackingAPI.getAllEvents();
-      const clickEvents = allEvents.filter(
-        (event) => event.event_type === "click"
-      );
+      let query = `
+        SELECT created_date, timestamp, user_id, element_type, element_id, page_url 
+        FROM user_logs.events_by_date 
+        WHERE event_type = 'click'
+      `;
+      const params = [];
+
+      // Add date filtering if provided
+      if (start_date) {
+        query += ` AND created_date >= ?`;
+        params.push(start_date);
+      }
+      if (end_date) {
+        query += ` AND created_date <= ?`;
+        params.push(end_date);
+      }
+
+      query += ` ALLOW FILTERING`;
+
+      const result = await client.execute(query, params, { prepare: true });
+      let events = result.rows;
 
       // Lọc theo element_type nếu có
       let filteredEvents = clickEvents;
