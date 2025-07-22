@@ -1,10 +1,11 @@
+/* eslint-disable no-undef */
 // server.js
 import app from "./backend/app.js";
 import { createServer } from "http";
 import cassandraConnection from "./backend/config/database/init.js";
 import { ApiKey } from "./backend/app/models/ApiKey.js";
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 3002;
 
 const server = createServer(app);
 

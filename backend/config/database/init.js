@@ -1,6 +1,6 @@
+/* eslint-disable no-undef */
 // config/database/init.js
 // Cassandra database connection configuration
-
 import cassandra from "cassandra-driver";
 
 class CassandraConnection {

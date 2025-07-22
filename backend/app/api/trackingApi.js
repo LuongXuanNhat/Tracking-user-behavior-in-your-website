@@ -7,6 +7,16 @@ import { v4 as uuidv4 } from "uuid";
 export class TrackingAPI {
   /**
    * Ghi nhận sự kiện đơn lẻ
+   * @param {Object} req - Express request object
+   * @param {Object} req.body - Request body
+   * @param {string} req.body.user_id - ID của user thực hiện event
+   * @param {string} req.body.event_type - Loại event (click, view, scroll, hover, load)
+   * @param {string} req.body.element_type - Loại phần tử (image, blog, review, service, button, link, video)
+   * @param {string} req.body.page_url - URL của trang web nơi event xảy ra
+   * @param {string} [req.body.element_id] - ID của phần tử được tương tác (optional)
+   * @param {Object} [req.body.metadata={}] - Thông tin bổ sung về event (optional)
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa thông tin event đã được ghi nhận
    */
   static async createEvent(req, res) {
     try {
@@ -138,6 +148,17 @@ export class TrackingAPI {
 
   /**
    * Ghi nhận nhiều sự kiện cùng lúc
+   * @param {Object} req - Express request object
+   * @param {Object} req.body - Request body
+   * @param {Array<Object>} req.body.events - Mảng các event cần ghi nhận
+   * @param {string} req.body.events[].user_id - ID của user thực hiện event
+   * @param {string} req.body.events[].event_type - Loại event (click, view, scroll, hover, load)
+   * @param {string} req.body.events[].element_type - Loại phần tử (image, blog, review, service, button, link, video)
+   * @param {string} req.body.events[].page_url - URL của trang web nơi event xảy ra
+   * @param {string} [req.body.events[].element_id] - ID của phần tử được tương tác (optional)
+   * @param {Object} [req.body.events[].metadata={}] - Thông tin bổ sung về event (optional)
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa thông tin về các events đã được xử lý và lỗi nếu có
    */
   static async createBatchEvents(req, res) {
     try {
@@ -301,6 +322,17 @@ export class TrackingAPI {
 
   /**
    * Lấy danh sách các events với filter
+   * @param {Object} req - Express request object
+   * @param {Object} req.query - Query parameters
+   * @param {string} [req.query.date] - Ngày để filter (format: YYYY-MM-DD)
+   * @param {string} [req.query.user_id] - ID của user để filter
+   * @param {string} [req.query.event_type] - Loại event để filter
+   * @param {string} [req.query.element_type] - Loại phần tử để filter
+   * @param {string} [req.query.page_url] - URL trang web để filter
+   * @param {number} [req.query.limit=50] - Số lượng kết quả tối đa
+   * @param {number} [req.query.offset=0] - Vị trí bắt đầu lấy kết quả
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa danh sách events đã được filter
    */
   static async getEvents(req, res) {
     try {
@@ -424,6 +456,16 @@ export class TrackingAPI {
 
   /**
    * Lấy events của một user cụ thể
+   * @param {Object} req - Express request object
+   * @param {Object} req.params - URL parameters
+   * @param {string} req.params.user_id - ID của user cần lấy events
+   * @param {Object} req.query - Query parameters
+   * @param {string} [req.query.start_date] - Ngày bắt đầu filter (ISO format)
+   * @param {string} [req.query.end_date] - Ngày kết thúc filter (ISO format)
+   * @param {string} [req.query.event_type] - Loại event để filter
+   * @param {number} [req.query.limit=100] - Số lượng kết quả tối đa
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa danh sách events của user
    */
   static async getUserEvents(req, res) {
     try {
@@ -510,6 +552,11 @@ export class TrackingAPI {
 
   /**
    * Lấy tất cả events để analytics sử dụng (từ Cassandra)
+   * @param {Object} [filters={}] - Các điều kiện filter
+   * @param {string} [filters.start_date] - Ngày bắt đầu filter (YYYY-MM-DD)
+   * @param {string} [filters.end_date] - Ngày kết thúc filter (YYYY-MM-DD)
+   * @param {string} [filters.event_type] - Loại event để filter
+   * @returns {Promise<Array>} Mảng chứa tất cả events thỏa mãn điều kiện filter
    */
   static async getAllEventsFromCassandra(filters = {}) {
     try {

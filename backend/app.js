@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 // app.js
 import express, { json, urlencoded } from "express";
 import cors from "cors";

@@ -6,6 +6,9 @@ import { Website } from "../models/Website.js";
 export class WebsiteAPI {
   /**
    * Lấy tất cả websites
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa danh sách websites và thống kê
    */
   static async getAllWebsites(req, res) {
     try {
@@ -30,6 +33,15 @@ export class WebsiteAPI {
 
   /**
    * Tạo website mới
+   * @param {Object} req - Express request object
+   * @param {Object} req.body - Request body
+   * @param {string} req.body.name - Tên website (required)
+   * @param {string} req.body.url - URL của website (required)
+   * @param {string} [req.body.type=production] - Loại website (optional)
+   * @param {string} [req.body.description] - Mô tả website (optional)
+   * @param {string} [req.body.owner=user] - Chủ sở hữu website (optional)
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa thông tin website mới và hướng dẫn tích hợp
    */
   static async createWebsite(req, res) {
     try {
@@ -68,10 +80,11 @@ export class WebsiteAPI {
           example: "https://example.com",
         });
       }
-
+      console.log('Tets');
       // Generate API key
       const apiKey = Website.generateApiKey(name, type);
 
+      console.log(`Creating website: ${name} with API key: ${apiKey}`);
       // Create website
       const newWebsite = new Website({
         name,
@@ -127,6 +140,11 @@ export class WebsiteAPI {
 
   /**
    * Lấy thông tin website theo ID
+   * @param {Object} req - Express request object
+   * @param {Object} req.params - URL parameters
+   * @param {string} req.params.id - ID của website cần tìm
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa thông tin chi tiết của website
    */
   static async getWebsiteById(req, res) {
     try {
@@ -155,6 +173,17 @@ export class WebsiteAPI {
 
   /**
    * Cập nhật website
+   * @param {Object} req - Express request object
+   * @param {Object} req.params - URL parameters
+   * @param {string} req.params.id - ID của website cần cập nhật
+   * @param {Object} req.body - Request body
+   * @param {string} [req.body.name] - Tên website mới
+   * @param {string} [req.body.url] - URL mới của website
+   * @param {string} [req.body.description] - Mô tả mới
+   * @param {string} [req.body.status] - Trạng thái mới
+   * @param {string} [req.body.type] - Loại website mới
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa thông tin website đã cập nhật
    */
   static async updateWebsite(req, res) {
     try {
@@ -193,6 +222,11 @@ export class WebsiteAPI {
 
   /**
    * Xóa website
+   * @param {Object} req - Express request object
+   * @param {Object} req.params - URL parameters
+   * @param {string} req.params.id - ID của website cần xóa
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response xác nhận việc xóa website
    */
   static async deleteWebsite(req, res) {
     try {
@@ -224,6 +258,11 @@ export class WebsiteAPI {
 
   /**
    * Regenerate API key cho website
+   * @param {Object} req - Express request object
+   * @param {Object} req.params - URL parameters
+   * @param {string} req.params.id - ID của website cần tạo lại API key
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa API key cũ và mới
    */
   static async regenerateApiKey(req, res) {
     try {
@@ -268,6 +307,9 @@ export class WebsiteAPI {
 
   /**
    * Lấy thống kê websites
+   * @param {Object} req - Express request object
+   * @param {Object} res - Express response object
+   * @returns {Object} JSON response chứa các thống kê về websites
    */
   static async getWebsiteStats(req, res) {
     try {
