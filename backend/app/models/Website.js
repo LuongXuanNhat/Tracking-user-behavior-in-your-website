@@ -45,11 +45,9 @@ export class Website {
         permissions: this.permissions,
       });
 
-      const client = await cassandraConnection.client();
+      const client = cassandraConnection.getClient();
       const query =
-        "INSERT INTO user_logs.websites (id, name, url, api_key, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
-
-      // Convert permissions object to Map for Cassandra
+        "INSERT INTO user_logs.websites (id, name, url, api_key, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"; // Convert permissions object to Map for Cassandra
       const permissionsMap = new Map(Object.entries(this.permissions));
       console.log("Permissions as Map:", permissionsMap);
 
