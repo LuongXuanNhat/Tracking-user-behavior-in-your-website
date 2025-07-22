@@ -52,19 +52,6 @@ node server.js
 # Backend API sẽ chạy tại http://localhost:3001
 ```
 
-#### Bước 6: Khởi động Frontend Demo (Terminal mới)
-
-```bash
-cd frontend
-npm install
-node server.js
-# Frontend Demo sẽ chạy tại http://localhost:8000
-```
-
-#### Bước 7: Truy cập Demo
-
-Mở trình duyệt và vào: `http://localhost:8000`
-
 ## 🏗️ Cấu trúc Backend
 
 ```
