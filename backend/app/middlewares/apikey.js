@@ -37,6 +37,7 @@ export const validateApiKey = (options = {}) => {
         req.headers["authorization"]?.replace("Bearer ", "") ||
         req.query.api_key;
 
+      // console.log("Kiểm tra quyền truy cập: ", req.headers);
       // Nếu không bắt buộc và không có API key, cho phép tiếp tục
       if (!required && !apiKey) {
         req.apiKeyValidated = false;

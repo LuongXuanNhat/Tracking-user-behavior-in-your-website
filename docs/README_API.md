@@ -35,6 +35,16 @@ docker-compose up -d
 cassandra -f
 ```
 
+- Hoặc chạy như này thay cho bước 4:
+
+```bash
+# Copy tệp từ host vào container
+docker cp ./cassandra/setup-database.cql cassandra_user_logs:/setup-database.cql
+
+# Sau đó chạy cqlsh
+docker exec -it cassandra_user_logs cqlsh -f /setup-database.cql
+```
+
 #### Bước 4: Tạo database schema
 
 ```bash
@@ -48,7 +58,7 @@ SOURCE 'cassandra/setup-database.cql';
 #### Bước 5: Khởi động Backend API
 
 ```bash
-node server.js
+nodemon server.js
 # Backend API sẽ chạy tại http://localhost:3001
 ```
 

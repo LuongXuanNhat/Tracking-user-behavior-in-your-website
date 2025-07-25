@@ -20,21 +20,51 @@ export class TrackingAPI {
    */
   static async createEvent(req, res) {
     try {
+      console.log("Check req: ", req.body);
+      const { events } = req.body;
+
+      // Validate events array
+      if (!Array.isArray(events) || events.length === 0) {
+        return res.status(400).json({
+          status: "error",
+          message: "Events array is required and must not be empty",
+        });
+      }
+
+      // Process first event to maintain backward compatibility
+      const event = events[0];
+
+      // Validate incoming event structure
+      if (!event || typeof event !== "object") {
+        return res.status(400).json({
+          status: "error",
+          message: "Invalid event format",
+        });
+      }
+
       const {
-        user_id,
-        event_type,
-        element_type,
-        page_url,
-        element_id,
+        userId,
+        eventType,
+        elementType,
+        pageUrl,
+        elementId,
         metadata = {},
-      } = req.body;
+        timestamp: clientTimestamp,
+      } = event;
+
+      // Map to snake_case for database consistency
+      const user_id = userId && userId.toString();
+      const event_type = eventType;
+      const element_type = elementType;
+      const page_url = pageUrl;
+      const element_id = elementId;
 
       // Validate required fields
       if (!user_id || !event_type || !element_type || !page_url) {
         return res.status(400).json({
           status: "error",
           message:
-            "Missing required fields: user_id, event_type, element_type, page_url",
+            "Missing required fields: userId, eventType, elementType, pageUrl",
         });
       }
 
@@ -69,9 +99,38 @@ export class TrackingAPI {
 
       // Create event and save to Cassandra
       const client = cassandraConnection.getClient();
+
+      // Generate UUID v4 for event ID
       const eventId = uuidv4();
-      const timestamp = new Date();
+      console.log("Debug - Generated UUID:", eventId);
+
+      // Handle timestamp
+      const timestamp = clientTimestamp
+        ? new Date(Number(clientTimestamp))
+        : new Date();
+      console.log("Debug - Timestamp:", timestamp);
       const createdDate = timestamp.toISOString().split("T")[0]; // YYYY-MM-DD format
+      console.log("Debug - Created Date:", createdDate);
+
+      // Prepare metadata
+      const metadataStr =
+        typeof metadata === "string" ? metadata : JSON.stringify(metadata);
+      console.log("Debug - Metadata:", metadataStr);
+
+      // Debug parameters before database insertion
+      console.log("Debug - Database Parameters:", {
+        createdDate,
+        timestamp,
+        eventId,
+        user_id,
+        event_type,
+        element_type,
+        element_id,
+        page_url,
+        ip: req.ip,
+        userAgent: req.get("User-Agent"),
+        metadataStr,
+      });
 
       // Save to events_by_date table
       const eventsQuery = `
@@ -81,23 +140,32 @@ export class TrackingAPI {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
-      await client.execute(
-        eventsQuery,
-        [
-          createdDate,
-          timestamp,
-          eventId,
-          user_id,
-          event_type,
-          element_type,
-          element_id || null,
-          page_url,
-          req.ip || null,
-          req.get("User-Agent") || null,
-          JSON.stringify(metadata),
-        ],
-        { prepare: true }
-      );
+      const params = [
+        createdDate,
+        timestamp,
+        eventId, // Keep as UUID object
+        user_id.toString(), // Ensure user_id is string
+        event_type,
+        element_type,
+        element_id ? element_id.toString() : null, // Ensure element_id is string if exists
+        page_url,
+        req.ip || null,
+        req.get("User-Agent") || null,
+        metadataStr,
+      ];
+
+      console.log("Debug - Final Query:", {
+        query: eventsQuery,
+        parameters: params,
+      });
+
+      try {
+        await client.execute(eventsQuery, params, { prepare: true });
+        console.log("Debug - Successfully inserted into events_by_date");
+      } catch (error) {
+        console.error("Debug - Error inserting into events_by_date:", error);
+        throw error;
+      }
 
       // Save to user_events table
       const userEventsQuery = `
@@ -107,34 +175,51 @@ export class TrackingAPI {
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
-      await client.execute(
-        userEventsQuery,
-        [
-          user_id,
-          timestamp,
-          eventId,
-          event_type,
-          element_type,
-          element_id || null,
-          page_url,
-          req.ip || null,
-          req.get("User-Agent") || null,
-          JSON.stringify(metadata),
-          createdDate,
-        ],
-        { prepare: true }
-      );
+      const userEventParams = [
+        user_id.toString(), // Ensure user_id is string
+        timestamp,
+        eventId, // Keep as UUID object
+        event_type,
+        element_type,
+        element_id ? element_id.toString() : null, // Ensure element_id is string if exists
+        page_url,
+        req.ip || null,
+        req.get("User-Agent") || null,
+        metadataStr,
+        createdDate,
+      ];
+
+      console.log("Debug - User Events Query:", {
+        query: userEventsQuery,
+        parameters: userEventParams,
+      });
+
+      try {
+        await client.execute(userEventsQuery, userEventParams, {
+          prepare: true,
+        });
+        console.log("Debug - Successfully inserted into user_events");
+      } catch (error) {
+        console.error("Debug - Error inserting into user_events:", error);
+        throw error;
+      }
 
       res.status(201).json({
         status: "success",
-        message: "Event tracked successfully",
+        message: "Events tracked successfully",
         data: {
-          event_id: eventId,
-          timestamp: timestamp,
-          user_id: user_id,
-          event_type: event_type,
-          element_type: element_type,
-          page_url: page_url,
+          processed: [
+            {
+              event_id: eventId,
+              timestamp: timestamp,
+              user_id: user_id,
+              event_type: event_type,
+              element_type: element_type,
+              page_url: page_url,
+            },
+          ],
+          total: 1,
+          errors: [],
         },
       });
     } catch (error) {
@@ -232,6 +317,7 @@ export class TrackingAPI {
           }
 
           // Create event and save to Cassandra
+          // Generate UUID v4 for event ID
           const eventId = uuidv4();
           const timestamp = new Date();
           const createdDate = timestamp.toISOString().split("T")[0];
@@ -244,23 +330,22 @@ export class TrackingAPI {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `;
 
-          await client.execute(
-            eventsQuery,
-            [
-              createdDate,
-              timestamp,
-              eventId,
-              user_id,
-              event_type,
-              element_type,
-              element_id || null,
-              page_url,
-              req.ip || null,
-              req.get("User-Agent") || null,
-              JSON.stringify(metadata),
-            ],
-            { prepare: true }
-          );
+          // Prepare parameters
+          const batchParams = [
+            createdDate,
+            timestamp,
+            eventId, // Keep as UUID object
+            user_id.toString(),
+            event_type,
+            element_type,
+            element_id ? element_id.toString() : null,
+            page_url,
+            req.ip || null,
+            req.get("User-Agent") || null,
+            JSON.stringify(metadata),
+          ];
+
+          await client.execute(eventsQuery, batchParams, { prepare: true });
 
           // Save to user_events table
           const userEventsQuery = `
@@ -270,23 +355,24 @@ export class TrackingAPI {
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `;
 
-          await client.execute(
-            userEventsQuery,
-            [
-              user_id,
-              timestamp,
-              eventId,
-              event_type,
-              element_type,
-              element_id || null,
-              page_url,
-              req.ip || null,
-              req.get("User-Agent") || null,
-              JSON.stringify(metadata),
-              createdDate,
-            ],
-            { prepare: true }
-          );
+          // Prepare parameters for user_events
+          const userEventParams = [
+            user_id.toString(),
+            timestamp,
+            eventId, // Keep as UUID object
+            event_type,
+            element_type,
+            element_id ? element_id.toString() : null,
+            page_url,
+            req.ip || null,
+            req.get("User-Agent") || null,
+            JSON.stringify(metadata),
+            createdDate,
+          ];
+
+          await client.execute(userEventsQuery, userEventParams, {
+            prepare: true,
+          });
 
           processedEvents.push({
             event_id: eventId,
