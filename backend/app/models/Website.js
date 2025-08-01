@@ -6,48 +6,49 @@ import { v4 as uuidv4 } from "uuid";
 import cassandra from "cassandra-driver";
 
 export class Website {
-  constructor(data) {
+  constructor(data = {}) {
     this.id = data.id || uuidv4();
     this.name = data.name;
     this.url = data.url;
-    this.api_key = data.api_key;
+    this.customer_id = data.customer_id;
     this.type = data.type || "production";
     this.description = data.description || "";
-    this.owner = data.owner || "admin";
     this.status = data.status || "active";
     this.created_at = data.created_at || new Date();
     this.updated_at = data.updated_at || new Date();
-    this.last_used = data.last_used || null;
-    this.usage_count = data.usage_count || 0;
+    this.last_activity = data.last_activity || null;
+    this.monthly_events = data.monthly_events || 0;
+    this.tracking_settings = data.tracking_settings || {};
 
-    // Initialize permissions properly - ensure it's always an object
-    const defaultPermissions = {
-      tracking: "true",
-      analytics: "true",
-      users: this.type !== "demo" ? "true" : "false",
+    // Initialize settings properly
+    const defaultSettings = {
+      auto_tracking: "true",
+      anonymize_ips: "false",
+      cookie_consent: "false",
+      session_timeout: "30",
     };
 
-    if (data.permissions) {
-      // If permissions is a Map (from Cassandra), convert to object
-      if (data.permissions instanceof Map) {
-        this.permissions = Object.fromEntries(data.permissions);
+    if (data.tracking_settings) {
+      if (data.tracking_settings instanceof Map) {
+        this.tracking_settings = Object.fromEntries(data.tracking_settings);
       } else if (
-        typeof data.permissions === "object" &&
-        !Array.isArray(data.permissions)
+        typeof data.tracking_settings === "object" &&
+        !Array.isArray(data.tracking_settings)
       ) {
-        this.permissions = { ...defaultPermissions, ...data.permissions };
+        this.tracking_settings = {
+          ...defaultSettings,
+          ...data.tracking_settings,
+        };
       } else {
-        this.permissions = defaultPermissions;
+        this.tracking_settings = defaultSettings;
       }
     } else {
-      this.permissions = defaultPermissions;
+      this.tracking_settings = defaultSettings;
     }
-
-    console.log("Constructor permissions:", this.permissions);
   }
 
   /**
-   * Tạo website mới với API key
+   * Tạo website mới
    */
   async create() {
     try {
@@ -55,53 +56,50 @@ export class Website {
         id: this.id,
         name: this.name,
         url: this.url,
-        api_key: this.api_key,
-        permissions: this.permissions,
+        customer_id: this.customer_id,
+        tracking_settings: this.tracking_settings,
       });
 
       const client = cassandraConnection.getClient();
-      const query =
-        "INSERT INTO user_logs.websites (id, name, url, api_key, permissions, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)";
+      const query = `
+        INSERT INTO user_logs.websites (
+          id, name, url, customer_id, type, description, status,
+          created_at, updated_at, tracking_settings
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
 
-      // Convert permissions object to Map for Cassandra, ensure it's not undefined
-      const permissionsToSave = this.permissions || {
-        tracking: "true",
-        analytics: "true",
-        users: "true",
-      };
-
-      // Ensure permissionsToSave is an object before calling Object.entries
-      let permissionsMap;
+      // Convert settings object to Map for Cassandra
+      const settingsToSave = this.tracking_settings || {};
+      let settingsMap;
       if (
-        permissionsToSave &&
-        typeof permissionsToSave === "object" &&
-        !Array.isArray(permissionsToSave)
+        settingsToSave &&
+        typeof settingsToSave === "object" &&
+        !Array.isArray(settingsToSave)
       ) {
-        permissionsMap = new Map(Object.entries(permissionsToSave));
+        settingsMap = new Map(Object.entries(settingsToSave));
       } else {
-        // Fallback to default permissions
-        permissionsMap = new Map([
-          ["tracking", "true"],
-          ["analytics", "true"],
-          ["users", "true"],
+        settingsMap = new Map([
+          ["auto_tracking", "true"],
+          ["anonymize_ips", "false"],
+          ["cookie_consent", "false"],
+          ["session_timeout", "30"],
         ]);
       }
-      console.log("Permissions as Map:", permissionsMap);
 
       const params = [
         this.id,
         this.name,
         this.url,
-        this.api_key,
-        permissionsMap,
+        this.customer_id,
+        this.type,
+        this.description,
+        this.status,
         this.created_at,
         this.updated_at,
+        settingsMap,
       ];
 
-      await client.execute(query, params, {
-        prepare: true,
-      });
-
+      await client.execute(query, params, { prepare: true });
       console.log("Website created successfully!");
       return this;
     } catch (error) {
@@ -110,35 +108,20 @@ export class Website {
     }
   }
   /**
-   * Tìm website theo API key
+   * Tìm website theo customer ID
    */
-  static async findByApiKey(apiKey) {
+  static async findByCustomerId(customerId) {
     try {
       const client = cassandraConnection.getClient();
       const query =
-        "SELECT * FROM user_logs.websites WHERE api_key = ? ALLOW FILTERING";
-      const result = await client.execute(query, [apiKey], { prepare: true });
-
-      if (result.rows.length === 0) return null;
-      return new Website(result.rows[0]);
-    } catch (error) {
-      console.error("Error finding website by api key:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Lấy tất cả websites
-   */
-  static async findAll(limit = 100) {
-    try {
-      const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM user_logs.websites LIMIT ?";
-      const result = await client.execute(query, [limit], { prepare: true });
+        "SELECT * FROM user_logs.websites WHERE customer_id = ? ALLOW FILTERING";
+      const result = await client.execute(query, [customerId], {
+        prepare: true,
+      });
 
       return result.rows.map((row) => new Website(row));
     } catch (error) {
-      console.error("Error finding all websites:", error);
+      console.error("Error finding websites by customer id:", error);
       throw error;
     }
   }
@@ -169,7 +152,6 @@ export class Website {
       const fields = [];
       const values = [];
 
-      // Dynamically build update query
       if (updateData.name !== undefined) {
         this.name = updateData.name;
         fields.push("name = ?");
@@ -194,6 +176,24 @@ export class Website {
         this.type = updateData.type;
         fields.push("type = ?");
         values.push(this.type);
+      }
+      if (updateData.tracking_settings !== undefined) {
+        this.tracking_settings = {
+          ...this.tracking_settings,
+          ...updateData.tracking_settings,
+        };
+        fields.push("tracking_settings = ?");
+        values.push(new Map(Object.entries(this.tracking_settings)));
+      }
+      if (updateData.last_activity !== undefined) {
+        this.last_activity = updateData.last_activity;
+        fields.push("last_activity = ?");
+        values.push(this.last_activity);
+      }
+      if (updateData.monthly_events !== undefined) {
+        this.monthly_events = updateData.monthly_events;
+        fields.push("monthly_events = ?");
+        values.push(this.monthly_events);
       }
 
       this.updated_at = new Date();
@@ -229,47 +229,44 @@ export class Website {
   }
 
   /**
-   * Cập nhật lần sử dụng cuối
+   * Cập nhật hoạt động cuối
    */
-  static async updateLastUsed(apiKey) {
+  async updateLastActivity() {
     try {
       const client = cassandraConnection.getClient();
       const now = new Date();
 
       const query = `
         UPDATE user_logs.websites 
-        SET last_used = ?, usage_count = usage_count + 1, updated_at = ?
-        WHERE api_key = ?
+        SET last_activity = ?, monthly_events = monthly_events + 1, updated_at = ?
+        WHERE id = ?
       `;
 
-      await client.execute(query, [now, now, apiKey], { prepare: true });
-      return await this.findByApiKey(apiKey);
+      await client.execute(query, [now, now, this.id], { prepare: true });
+      this.last_activity = now;
+      this.updated_at = now;
+      this.monthly_events += 1;
+
+      return this;
     } catch (error) {
-      console.error("Error updating last used:", error);
+      console.error("Error updating last activity:", error);
       throw error;
     }
   }
 
   /**
-   * Tạo API key mới
+   * Lấy tất cả websites
    */
-  static generateApiKey(name, type = "production") {
-    const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substr(2, 12);
-    const cleanName = name.toLowerCase().replace(/[^a-z0-9]/g, "");
-    return `${type}_${cleanName}_${timestamp}_${randomString}`;
-  }
-
-  /**
-   * Kiểm tra API key có hợp lệ và active không
-   */
-  static async validateApiKey(apiKey) {
+  static async findAll(limit = 100) {
     try {
-      const website = await this.findByApiKey(apiKey);
-      return website && website.status === "active";
+      const client = cassandraConnection.getClient();
+      const query = "SELECT * FROM user_logs.websites LIMIT ?";
+      const result = await client.execute(query, [limit], { prepare: true });
+
+      return result.rows.map((row) => new Website(row));
     } catch (error) {
-      console.error("Error validating api key:", error);
-      return false;
+      console.error("Error finding all websites:", error);
+      throw error;
     }
   }
 
@@ -298,16 +295,15 @@ export class Website {
       id: this.id,
       name: this.name,
       url: this.url,
-      api_key: this.api_key,
+      customer_id: this.customer_id,
       type: this.type,
       description: this.description,
-      owner: this.owner,
       status: this.status,
       created_at: this.created_at,
       updated_at: this.updated_at,
-      last_used: this.last_used,
-      usage_count: this.usage_count,
-      permissions: this.permissions,
+      last_activity: this.last_activity,
+      monthly_events: this.monthly_events,
+      tracking_settings: this.tracking_settings,
     };
   }
 }

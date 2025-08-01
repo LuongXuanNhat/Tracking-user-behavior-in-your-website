@@ -1,33 +1,30 @@
 // routes/user.js
+// Routes cho user/visitor management
+
 import express from "express";
-import { UserAPI } from "../api/userApi.js";
-import { requireApiKey, requirePermission } from "../middlewares/apikey.js";
+import {
+  createUser,
+  getUsers,
+  getUser,
+  getUserByEmail,
+  updateUser,
+  deleteUser,
+  getUserActivities,
+  getUserStats,
+} from "../api/userApi.js";
 
 const router = express.Router();
 
-// GET all users - chỉ cần API key
-router.get("/", requireApiKey, UserAPI.getAllUsers);
+// Public routes for user creation
+router.post("/", createUser);
 
-// GET user by ID - chỉ cần API key
-router.get("/:id", requireApiKey, UserAPI.getUserById);
-
-// POST create new user - cần API key và permission 'users'
-router.post("/", requireApiKey, requirePermission("users"), UserAPI.createUser);
-
-// PUT update user - cần API key và permission 'users'
-router.put(
-  "/:id",
-  requireApiKey,
-  requirePermission("users"),
-  UserAPI.updateUser
-);
-
-// DELETE user - cần API key và permission 'users'
-router.delete(
-  "/:id",
-  requireApiKey,
-  requirePermission("users"),
-  UserAPI.deleteUser
-);
+// Protected routes (thêm authentication middleware nếu cần)
+router.get("/", getUsers);
+router.get("/by-email/:email", getUserByEmail);
+router.get("/:id", getUser);
+router.put("/:id", updateUser);
+router.delete("/:id", deleteUser);
+router.get("/:id/activities", getUserActivities);
+router.get("/:id/stats", getUserStats);
 
 export default router;

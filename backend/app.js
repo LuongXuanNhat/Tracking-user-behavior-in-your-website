@@ -24,31 +24,33 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 app.use(express.static(join(__dirname, "public")));
 
 // Routes
+import customerRoutes from "./app/routes/customer.js";
 import userRoutes from "./app/routes/user.js";
 import trackingRoutes from "./app/routes/tracking.js";
 import analyticsRoutes from "./app/routes/analytics.js";
 import websiteRoutes from "./app/routes/website.js";
 import apiKeyRoutes from "./app/routes/apikey.js";
-import { getValidApiKeys } from "./app/middlewares/apikey.js";
 
+app.use("/api/customers", customerRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/tracking", trackingRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/websites", websiteRoutes);
-app.use("/api/keys", apiKeyRoutes);
+app.use("/api/api-keys", apiKeyRoutes);
 
 // Test route
 app.get("/", (req, res) => {
   res.json({
     status: "success",
     message: "User Behavior Tracking API is working!",
-    version: "1.0.0",
+    version: "2.0.0",
     endpoints: {
+      customers: "/api/customers",
       users: "/api/users",
       tracking: "/api/tracking",
       analytics: "/api/analytics",
       websites: "/api/websites",
-      keys: "/api/keys",
+      apiKeys: "/api/api-keys",
     },
     auth: {
       required: true,

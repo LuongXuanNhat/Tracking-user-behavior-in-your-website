@@ -1,422 +1,509 @@
 // api/analyticsApi.js
-// Logic xử lý API cho analytics
+// API endpoints cho analytics và báo cáo
 
-import cassandraConnection from "../../config/database/init.js";
+import { Event } from "../models/Event.js";
+import { Website } from "../models/Website.js";
+import { ApiKey } from "../models/ApiKey.js";
 
-export class AnalyticsAPI {
-  /**
-   * Thống kê lượt click theo element type
-   */
-  static async getClickAnalytics(req, res) {
-    try {
-      const { start_date, end_date, element_type } = req.query;
-      const client = cassandraConnection.getClient();
+/**
+ * NGHIỆP VỤ 3: XEM DASHBOARD REAL-TIME
+ * NGHIỆP VỤ 4: XEM BÁO CÁO LỊCH SỬ
+ * NGHIỆP VỤ 5: PHÂN TÍCH USER JOURNEY
+ */
 
-      let query = `
-        SELECT created_date, timestamp, user_id, element_type, element_id, page_url 
-        FROM user_logs.events_by_date 
-        WHERE event_type = 'click'
-      `;
-      const params = [];
+/**
+ * Dashboard real-time cho website
+ * GET /api/analytics/realtime/:websiteId
+ */
+export async function getRealtimeAnalytics(req, res) {
+  try {
+    const customerId = req.customer.customerId;
+    const { websiteId } = req.params;
 
-      // Add date filtering if provided
-      if (start_date) {
-        query += ` AND created_date >= ?`;
-        params.push(start_date);
-      }
-      if (end_date) {
-        query += ` AND created_date <= ?`;
-        params.push(end_date);
-      }
-
-      query += ` ALLOW FILTERING`;
-
-      const result = await client.execute(query, params, { prepare: true });
-      let events = result.rows;
-
-      // Lọc theo element_type nếu có
-      let filteredEvents = clickEvents;
-      if (element_type) {
-        filteredEvents = clickEvents.filter(
-          (event) => event.element_type === element_type
-        );
-      }
-
-      // Lọc theo thời gian nếu có
-      if (start_date || end_date) {
-        filteredEvents = filteredEvents.filter((event) => {
-          const eventDate = new Date(event.timestamp);
-          const start = start_date
-            ? new Date(start_date)
-            : new Date("1970-01-01");
-          const end = end_date ? new Date(end_date) : new Date();
-          return eventDate >= start && eventDate <= end;
-        });
-      }
-
-      // Tổng hợp data theo element_type và element_id
-      const summaryMap = {};
-      const detailsMap = {};
-
-      filteredEvents.forEach((event) => {
-        const key = `${event.element_type}-${event.element_id || "unknown"}`;
-
-        if (!detailsMap[key]) {
-          detailsMap[key] = {
-            element_type: event.element_type,
-            element_id: event.element_id || "unknown",
-            page_url: event.page_url,
-            click_count: 0,
-            unique_users: new Set(),
-          };
-        }
-
-        detailsMap[key].click_count++;
-        detailsMap[key].unique_users.add(event.user_id);
-
-        // Tổng hợp theo element_type
-        if (!summaryMap[event.element_type]) {
-          summaryMap[event.element_type] = {
-            total_clicks: 0,
-            total_unique_users: new Set(),
-            items: [],
-          };
-        }
-        summaryMap[event.element_type].total_clicks++;
-        summaryMap[event.element_type].total_unique_users.add(event.user_id);
+    // Kiểm tra quyền truy cập website
+    const website = await Website.findById(websiteId);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập website này",
       });
+    }
 
-      // Convert Set to count và tạo final data
-      const summary = {};
-      Object.keys(summaryMap).forEach((elementType) => {
-        summary[elementType] = {
-          total_clicks: summaryMap[elementType].total_clicks,
-          total_unique_users: summaryMap[elementType].total_unique_users.size,
-          items: [],
+    const today = new Date().toISOString().split("T")[0];
+    const now = new Date();
+    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+
+    // Lấy events trong 1 giờ qua
+    const recentEvents = await Event.findByDateRange(oneHourAgo, today, 1000);
+
+    // Filter events thuộc website này
+    const websiteEvents = recentEvents.filter(
+      (event) => event.metadata && event.metadata.website_id === websiteId
+    );
+
+    // Tính toán metrics real-time
+    const currentTime = now.getTime();
+    const oneHourAgoTime = currentTime - 60 * 60 * 1000;
+    const fiveMinutesAgoTime = currentTime - 5 * 60 * 1000;
+
+    const activeEvents = websiteEvents.filter(
+      (event) => new Date(event.timestamp).getTime() > fiveMinutesAgoTime
+    );
+
+    // Unique sessions trong 5 phút qua
+    const activeSessions = new Set(
+      activeEvents.map((event) => event.session_id)
+    );
+
+    // Page views trong 1 giờ qua
+    const pageViews = websiteEvents.filter(
+      (event) => event.event_type === "page_view"
+    );
+
+    // Top pages trong 1 giờ qua
+    const pageStats = {};
+    pageViews.forEach((event) => {
+      pageStats[event.page_url] = (pageStats[event.page_url] || 0) + 1;
+    });
+
+    const topPages = Object.entries(pageStats)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([page_url, count]) => ({ page_url, count }));
+
+    // Event types trong 1 giờ qua
+    const eventTypeStats = {};
+    websiteEvents.forEach((event) => {
+      eventTypeStats[event.event_type] =
+        (eventTypeStats[event.event_type] || 0) + 1;
+    });
+
+    res.json({
+      success: true,
+      data: {
+        realtime: {
+          active_users: activeSessions.size,
+          total_events_1h: websiteEvents.length,
+          page_views_1h: pageViews.length,
+          last_updated: now.toISOString(),
+        },
+        top_pages: topPages,
+        event_types: eventTypeStats,
+        recent_events: activeEvents.slice(0, 20).map((event) => event.toJSON()),
+      },
+    });
+  } catch (error) {
+    console.error("Get realtime analytics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Báo cáo lịch sử cho website
+ * GET /api/analytics/reports/:websiteId
+ */
+export async function getHistoricalReports(req, res) {
+  try {
+    const customerId = req.customer.customerId;
+    const { websiteId } = req.params;
+    const {
+      startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0],
+      endDate = new Date().toISOString().split("T")[0],
+      groupBy = "day",
+    } = req.query;
+
+    // Kiểm tra quyền truy cập website
+    const website = await Website.findById(websiteId);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập website này",
+      });
+    }
+
+    // Lấy tất cả events trong khoảng thời gian
+    const events = await Event.findByDateRange(startDate, endDate, 10000);
+
+    // Filter events thuộc website này
+    const websiteEvents = events.filter(
+      (event) => event.metadata && event.metadata.website_id === websiteId
+    );
+
+    // Group by date/hour
+    const groupedData = {};
+    const dateFormat = groupBy === "hour" ? "YYYY-MM-DD HH" : "YYYY-MM-DD";
+
+    websiteEvents.forEach((event) => {
+      const date = new Date(event.timestamp);
+      let key;
+      if (groupBy === "hour") {
+        key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+          2,
+          "0"
+        )}-${String(date.getDate()).padStart(2, "0")} ${String(
+          date.getHours()
+        ).padStart(2, "0")}`;
+      } else {
+        key = event.created_date;
+      }
+
+      if (!groupedData[key]) {
+        groupedData[key] = {
+          date: key,
+          total_events: 0,
+          page_views: 0,
+          unique_users: new Set(),
+          unique_sessions: new Set(),
+          event_types: {},
         };
-      });
+      }
 
-      const details = Object.values(detailsMap).map((item) => ({
-        element_type: item.element_type,
-        element_id: item.element_id,
-        page_url: item.page_url,
-        click_count: item.click_count,
+      groupedData[key].total_events++;
+      if (event.event_type === "page_view") {
+        groupedData[key].page_views++;
+      }
+      groupedData[key].unique_users.add(event.user_id);
+      groupedData[key].unique_sessions.add(event.session_id);
+      groupedData[key].event_types[event.event_type] =
+        (groupedData[key].event_types[event.event_type] || 0) + 1;
+    });
+
+    // Convert sets to counts and sort by date
+    const chartData = Object.values(groupedData)
+      .map((item) => ({
+        date: item.date,
+        total_events: item.total_events,
+        page_views: item.page_views,
         unique_users: item.unique_users.size,
-      }));
+        unique_sessions: item.unique_sessions.size,
+        event_types: item.event_types,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
 
-      // Thêm items vào summary
-      details.forEach((detail) => {
-        if (summary[detail.element_type]) {
-          summary[detail.element_type].items.push(detail);
+    // Tính tổng kết
+    const totalStats = {
+      total_events: websiteEvents.length,
+      total_page_views: websiteEvents.filter(
+        (e) => e.event_type === "page_view"
+      ).length,
+      unique_users: new Set(websiteEvents.map((e) => e.user_id)).size,
+      unique_sessions: new Set(websiteEvents.map((e) => e.session_id)).size,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        period: { startDate, endDate },
+        summary: totalStats,
+        chart_data: chartData,
+      },
+    });
+  } catch (error) {
+    console.error("Get historical reports error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * User journey analysis
+ * GET /api/analytics/user-journey/:userId
+ */
+export async function getUserJourney(req, res) {
+  try {
+    const { userId } = req.params;
+    const {
+      startDate = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0],
+      endDate = new Date().toISOString().split("T")[0],
+    } = req.query;
+
+    // Lấy tất cả events của user trong khoảng thời gian
+    const userEvents = await Event.findByUserId(
+      userId,
+      startDate,
+      endDate,
+      1000
+    );
+
+    // Group by session
+    const sessionGroups = {};
+    userEvents.forEach((event) => {
+      if (!sessionGroups[event.session_id]) {
+        sessionGroups[event.session_id] = [];
+      }
+      sessionGroups[event.session_id].push(event);
+    });
+
+    // Sort events trong mỗi session theo thời gian
+    Object.keys(sessionGroups).forEach((sessionId) => {
+      sessionGroups[sessionId].sort(
+        (a, b) => new Date(a.timestamp) - new Date(b.timestamp)
+      );
+    });
+
+    // Tạo user journey timeline
+    const sessions = Object.entries(sessionGroups)
+      .map(([sessionId, events]) => {
+        const firstEvent = events[0];
+        const lastEvent = events[events.length - 1];
+        const duration =
+          new Date(lastEvent.timestamp) - new Date(firstEvent.timestamp);
+
+        // Page flow trong session
+        const pageFlow = events
+          .filter((e) => e.event_type === "page_view")
+          .map((e) => ({
+            page_url: e.page_url,
+            timestamp: e.timestamp,
+            time_on_page: null, // Sẽ tính sau
+          }));
+
+        // Tính time on page
+        for (let i = 0; i < pageFlow.length - 1; i++) {
+          const currentTime = new Date(pageFlow[i].timestamp);
+          const nextTime = new Date(pageFlow[i + 1].timestamp);
+          pageFlow[i].time_on_page = Math.round(
+            (nextTime - currentTime) / 1000
+          ); // seconds
         }
-      });
 
-      res.json({
-        status: "success",
-        data: {
-          summary,
-          details,
-          total_clicks: filteredEvents.length,
-        },
-      });
-    } catch (error) {
-      res.status(500).json({
-        status: "error",
-        message: "Internal server error",
-        error: error.message,
+        return {
+          session_id: sessionId,
+          start_time: firstEvent.timestamp,
+          end_time: lastEvent.timestamp,
+          duration_seconds: Math.round(duration / 1000),
+          total_events: events.length,
+          page_views: events.filter((e) => e.event_type === "page_view").length,
+          clicks: events.filter((e) => e.event_type === "click").length,
+          page_flow: pageFlow,
+          all_events: events.map((e) => e.toJSON()),
+        };
+      })
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+    // User summary
+    const userSummary = {
+      user_id: userId,
+      total_sessions: sessions.length,
+      total_events: userEvents.length,
+      total_duration: sessions.reduce((sum, s) => sum + s.duration_seconds, 0),
+      first_seen: sessions.length > 0 ? sessions[0].start_time : null,
+      last_seen:
+        sessions.length > 0 ? sessions[sessions.length - 1].end_time : null,
+      unique_pages: new Set(
+        userEvents
+          .filter((e) => e.event_type === "page_view")
+          .map((e) => e.page_url)
+      ).size,
+    };
+
+    res.json({
+      success: true,
+      data: {
+        user_summary: userSummary,
+        sessions: sessions,
+      },
+    });
+  } catch (error) {
+    console.error("Get user journey error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Page performance analytics
+ * GET /api/analytics/pages/:websiteId
+ */
+export async function getPageAnalytics(req, res) {
+  try {
+    const customerId = req.customer.customerId;
+    const { websiteId } = req.params;
+    const {
+      startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0],
+      endDate = new Date().toISOString().split("T")[0],
+    } = req.query;
+
+    // Kiểm tra quyền truy cập website
+    const website = await Website.findById(websiteId);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập website này",
       });
     }
-  }
 
-  /**
-   * Thống kê lượt xem trang
-   */
-  static async getViewAnalytics(req, res) {
-    try {
-      const { start_date, end_date, page_url } = req.query;
+    // Lấy events trong khoảng thời gian
+    const events = await Event.findByDateRange(startDate, endDate, 10000);
 
-      // Lấy data thật từ tracking events
-      const allEvents = TrackingAPI.getAllEvents();
-      const viewEvents = allEvents.filter(
-        (event) => event.event_type === "view"
-      );
+    // Filter events thuộc website này
+    const websiteEvents = events.filter(
+      (event) => event.metadata && event.metadata.website_id === websiteId
+    );
 
-      // Lọc theo page_url nếu có
-      let filteredEvents = viewEvents;
-      if (page_url) {
-        filteredEvents = viewEvents.filter((event) =>
-          event.page_url.includes(page_url)
-        );
-      }
+    // Group by page
+    const pageStats = {};
 
-      // Lọc theo thời gian nếu có
-      if (start_date || end_date) {
-        filteredEvents = filteredEvents.filter((event) => {
-          const eventDate = new Date(event.timestamp);
-          const start = start_date
-            ? new Date(start_date)
-            : new Date("1970-01-01");
-          const end = end_date ? new Date(end_date) : new Date();
-          return eventDate >= start && eventDate <= end;
-        });
-      }
-
-      // Tổng hợp data theo page_url
-      const pageMap = {};
-
-      filteredEvents.forEach((event) => {
-        if (!pageMap[event.page_url]) {
-          pageMap[event.page_url] = {
+    websiteEvents.forEach((event) => {
+      if (event.event_type === "page_view") {
+        if (!pageStats[event.page_url]) {
+          pageStats[event.page_url] = {
             page_url: event.page_url,
-            view_count: 0,
-            unique_visitors: new Set(),
-            timestamps: [],
+            views: 0,
+            unique_users: new Set(),
+            sessions: new Set(),
+            total_time: 0,
+            bounce_sessions: new Set(),
           };
         }
 
-        pageMap[event.page_url].view_count++;
-        pageMap[event.page_url].unique_visitors.add(event.user_id);
-        pageMap[event.page_url].timestamps.push(new Date(event.timestamp));
+        pageStats[event.page_url].views++;
+        pageStats[event.page_url].unique_users.add(event.user_id);
+        pageStats[event.page_url].sessions.add(event.session_id);
+      }
+    });
+
+    // Tính bounce rate (sessions chỉ có 1 page view)
+    const sessionPageCounts = {};
+    websiteEvents
+      .filter((e) => e.event_type === "page_view")
+      .forEach((event) => {
+        if (!sessionPageCounts[event.session_id]) {
+          sessionPageCounts[event.session_id] = new Set();
+        }
+        sessionPageCounts[event.session_id].add(event.page_url);
       });
 
-      // Convert to final format
-      const pages = Object.values(pageMap).map((page) => ({
-        page_url: page.page_url,
-        view_count: page.view_count,
-        unique_visitors: page.unique_visitors.size,
-        // Tính avg_time_on_page và bounce_rate có thể phức tạp hơn
-        // Hiện tại để placeholder
-        avg_time_on_page: "00:02:30",
-        bounce_rate: Math.random() * 0.5, // Random 0-50%
-      }));
+    // Convert to final format
+    const pageAnalytics = Object.values(pageStats)
+      .map((page) => {
+        const bounces = Array.from(page.sessions).filter(
+          (sessionId) =>
+            sessionPageCounts[sessionId] &&
+            sessionPageCounts[sessionId].size === 1
+        ).length;
 
-      // Sắp xếp theo lượt xem giảm dần
-      pages.sort((a, b) => b.view_count - a.view_count);
+        return {
+          page_url: page.page_url,
+          views: page.views,
+          unique_users: page.unique_users.size,
+          sessions: page.sessions.size,
+          bounce_rate:
+            page.sessions.size > 0
+              ? ((bounces / page.sessions.size) * 100).toFixed(2)
+              : 0,
+        };
+      })
+      .sort((a, b) => b.views - a.views);
 
-      const totalViews = pages.reduce((sum, page) => sum + page.view_count, 0);
-      const totalUniqueVisitors = pages.reduce(
-        (sum, page) => sum + page.unique_visitors,
-        0
-      );
-
-      res.json({
-        status: "success",
-        data: {
-          pages,
-          summary: {
-            total_views: totalViews,
-            total_unique_visitors: totalUniqueVisitors,
-            avg_bounce_rate:
-              pages.length > 0
-                ? (
-                    pages.reduce((sum, page) => sum + page.bounce_rate, 0) /
-                    pages.length
-                  ).toFixed(2)
-                : "0.00",
-          },
-        },
-      });
-    } catch (error) {
-      res.status(500).json({
-        status: "error",
-        message: "Internal server error",
-        error: error.message,
-      });
-    }
+    res.json({
+      success: true,
+      data: {
+        period: { startDate, endDate },
+        pages: pageAnalytics,
+      },
+    });
+  } catch (error) {
+    console.error("Get page analytics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
   }
+}
 
-  /**
-   * Phân tích dịch vụ nào phổ biến nhất / ít dùng nhất
-   */
-  static async getPopularServices(req, res) {
-    try {
-      const { period = "7d" } = req.query; // 7d, 30d, 90d
+/**
+ * Event type analytics
+ * GET /api/analytics/events/:websiteId
+ */
+export async function getEventAnalytics(req, res) {
+  try {
+    const customerId = req.customer.customerId;
+    const { websiteId } = req.params;
+    const {
+      startDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .split("T")[0],
+      endDate = new Date().toISOString().split("T")[0],
+    } = req.query;
 
-      // Giả lập data phân tích dịch vụ
-      const serviceAnalytics = [
-        {
-          service_name: "Web Development",
-          service_id: "web-dev",
-          interactions: {
-            views: 1250,
-            clicks: 340,
-            inquiries: 45,
-            conversions: 12,
-          },
-          popularity_score: 92,
-          trend: "increasing",
-        },
-        {
-          service_name: "SEO Optimization",
-          service_id: "seo",
-          interactions: {
-            views: 890,
-            clicks: 245,
-            inquiries: 32,
-            conversions: 8,
-          },
-          popularity_score: 78,
-          trend: "stable",
-        },
-        {
-          service_name: "Mobile App Development",
-          service_id: "mobile-app",
-          interactions: {
-            views: 567,
-            clicks: 189,
-            inquiries: 28,
-            conversions: 6,
-          },
-          popularity_score: 65,
-          trend: "increasing",
-        },
-        {
-          service_name: "UI/UX Design",
-          service_id: "ui-ux",
-          interactions: {
-            views: 445,
-            clicks: 156,
-            inquiries: 22,
-            conversions: 5,
-          },
-          popularity_score: 58,
-          trend: "stable",
-        },
-        {
-          service_name: "E-commerce Solutions",
-          service_id: "ecommerce",
-          interactions: {
-            views: 298,
-            clicks: 89,
-            inquiries: 12,
-            conversions: 2,
-          },
-          popularity_score: 38,
-          trend: "decreasing",
-        },
-        {
-          service_name: "Digital Marketing",
-          service_id: "digital-marketing",
-          interactions: {
-            views: 234,
-            clicks: 67,
-            inquiries: 8,
-            conversions: 1,
-          },
-          popularity_score: 29,
-          trend: "decreasing",
-        },
-      ];
-
-      // Sắp xếp theo popularity score
-      serviceAnalytics.sort((a, b) => b.popularity_score - a.popularity_score);
-
-      const mostPopular = serviceAnalytics.slice(0, 3);
-      const leastPopular = serviceAnalytics.slice(-3).reverse();
-
-      // Tính conversion rate cho mỗi service
-      const servicesWithConversionRate = serviceAnalytics.map((service) => ({
-        ...service,
-        conversion_rate: (
-          (service.interactions.conversions / service.interactions.views) *
-          100
-        ).toFixed(2),
-        click_through_rate: (
-          (service.interactions.clicks / service.interactions.views) *
-          100
-        ).toFixed(2),
-      }));
-
-      res.json({
-        status: "success",
-        data: {
-          period,
-          most_popular: mostPopular,
-          least_popular: leastPopular,
-          all_services: servicesWithConversionRate,
-          insights: {
-            total_services_analyzed: serviceAnalytics.length,
-            avg_popularity_score: (
-              serviceAnalytics.reduce((sum, s) => sum + s.popularity_score, 0) /
-              serviceAnalytics.length
-            ).toFixed(1),
-            trending_up: serviceAnalytics.filter(
-              (s) => s.trend === "increasing"
-            ).length,
-            trending_down: serviceAnalytics.filter(
-              (s) => s.trend === "decreasing"
-            ).length,
-          },
-        },
-      });
-    } catch (error) {
-      res.status(500).json({
-        status: "error",
-        message: "Internal server error",
-        error: error.message,
+    // Kiểm tra quyền truy cập website
+    const website = await Website.findById(websiteId);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập website này",
       });
     }
-  }
 
-  /**
-   * Tổng hợp dashboard chính
-   */
-  static async getDashboard(req, res) {
-    try {
-      const { period = "7d" } = req.query;
+    // Lấy events trong khoảng thời gian
+    const events = await Event.findByDateRange(startDate, endDate, 10000);
 
-      const dashboardData = {
-        overview: {
-          total_events: 15420,
-          unique_users: 3248,
-          total_pageviews: 8945,
-          avg_session_duration: "00:04:32",
-        },
-        top_events: [
-          { event_type: "click", count: 6240, percentage: 40.4 },
-          { event_type: "view", count: 4890, percentage: 31.7 },
-          { event_type: "scroll", count: 2850, percentage: 18.5 },
-          { event_type: "hover", count: 1440, percentage: 9.3 },
-        ],
-        top_elements: [
-          { element_type: "image", interactions: 3456, unique_users: 1234 },
-          { element_type: "blog", interactions: 2890, unique_users: 987 },
-          { element_type: "review", interactions: 2340, unique_users: 856 },
-          { element_type: "service", interactions: 1890, unique_users: 678 },
-        ],
-        hourly_activity: this.generateHourlyActivity(),
-        real_time: {
-          active_users: 23,
-          current_pageviews: 45,
-          events_last_minute: 12,
-        },
-      };
+    // Filter events thuộc website này
+    const websiteEvents = events.filter(
+      (event) => event.metadata && event.metadata.website_id === websiteId
+    );
 
-      res.json({
-        status: "success",
-        data: dashboardData,
-        period,
-        last_updated: new Date().toISOString(),
-      });
-    } catch (error) {
-      res.status(500).json({
-        status: "error",
-        message: "Internal server error",
-        error: error.message,
-      });
-    }
-  }
+    // Group by event type
+    const eventTypeStats = {};
 
-  // Helper function để generate hourly activity data
-  static generateHourlyActivity() {
-    const hours = [];
-    for (let i = 0; i < 24; i++) {
-      hours.push({
-        hour: i,
-        events: Math.floor(Math.random() * 200) + 50,
-        users: Math.floor(Math.random() * 50) + 10,
-      });
-    }
-    return hours;
+    websiteEvents.forEach((event) => {
+      if (!eventTypeStats[event.event_type]) {
+        eventTypeStats[event.event_type] = {
+          event_type: event.event_type,
+          count: 0,
+          unique_users: new Set(),
+          unique_sessions: new Set(),
+        };
+      }
+
+      eventTypeStats[event.event_type].count++;
+      eventTypeStats[event.event_type].unique_users.add(event.user_id);
+      eventTypeStats[event.event_type].unique_sessions.add(event.session_id);
+    });
+
+    // Convert to final format
+    const eventAnalytics = Object.values(eventTypeStats)
+      .map((stat) => ({
+        event_type: stat.event_type,
+        count: stat.count,
+        unique_users: stat.unique_users.size,
+        unique_sessions: stat.unique_sessions.size,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    res.json({
+      success: true,
+      data: {
+        period: { startDate, endDate },
+        event_types: eventAnalytics,
+      },
+    });
+  } catch (error) {
+    console.error("Get event analytics error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
   }
 }

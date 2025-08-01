@@ -1,0 +1,1020 @@
+{
+  "info": {
+    "name": "User Behavior Tracking API",
+    "description": "Complete API collection for User Behavior Tracking system",
+    "version": "2.0.0",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3002",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "apiKey",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "customerId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "websiteId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "userId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/",
+          "host": ["{{baseUrl}}"],
+          "path": [""]
+        }
+      }
+    },
+    {
+      "name": "Customer Management",
+      "item": [
+        {
+          "name": "Register Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe\",\n  \"email\": \"john@example.com\",\n  \"password\": \"password123\",\n  \"websiteName\": \"My Website\",\n  \"websiteUrl\": \"https://mywebsite.com\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "register"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const responseJson = pm.response.json();",
+                  "    pm.collectionVariables.set('token', responseJson.data.token);",
+                  "    pm.collectionVariables.set('customerId', responseJson.data.customer.id);",
+                  "    pm.collectionVariables.set('websiteId', responseJson.data.website.id);",
+                  "    pm.collectionVariables.set('apiKey', responseJson.data.apiKey.api_key);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Login Customer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"john@example.com\",\n  \"password\": \"password123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "login"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const responseJson = pm.response.json();",
+                  "    pm.collectionVariables.set('token', responseJson.data.token);",
+                  "    pm.collectionVariables.set('customerId', responseJson.data.customer.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get Customer Profile",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Update Customer Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.updated@example.com\",\n  \"subscription_plan\": \"premium\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/profile",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "profile"]
+            }
+          }
+        },
+        {
+          "name": "Change Password",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"currentPassword\": \"password123\",\n  \"newPassword\": \"newpassword123\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/customers/change-password",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers", "change-password"]
+            }
+          }
+        },
+        {
+          "name": "Get All Customers (Admin)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/customers",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "customers"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Website Management",
+      "item": [
+        {
+          "name": "Create Website",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"My New Website\",\n  \"url\": \"https://mynewwebsite.com\",\n  \"type\": \"production\",\n  \"description\": \"My awesome website\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/websites",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "websites"]
+            }
+          }
+        },
+        {
+          "name": "Get Websites",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/websites",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "websites"]
+            }
+          }
+        },
+        {
+          "name": "Get Website by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/websites/{{websiteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "websites", "{{websiteId}}"]
+            }
+          }
+        },
+        {
+          "name": "Update Website",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Updated Website Name\",\n  \"url\": \"https://updatedwebsite.com\",\n  \"description\": \"Updated description\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/websites/{{websiteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "websites", "{{websiteId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete Website",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/websites/{{websiteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "websites", "{{websiteId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Tracking Code",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/websites/{{websiteId}}/tracking-code",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "websites", "{{websiteId}}", "tracking-code"]
+            }
+          }
+        },
+        {
+          "name": "Get Website Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/websites/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "websites", "stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "API Key Management",
+      "item": [
+        {
+          "name": "Create API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"website_id\": \"{{websiteId}}\",\n  \"type\": \"production\",\n  \"description\": \"Additional API key for production\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys"]
+            }
+          }
+        },
+        {
+          "name": "Get API Keys",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys"]
+            }
+          }
+        },
+        {
+          "name": "Get API Key by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys/{apiKeyId}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys", "{apiKeyId}"]
+            }
+          }
+        },
+        {
+          "name": "Update API Key",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"description\": \"Updated API key description\",\n  \"is_active\": true\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys/{apiKeyId}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys", "{apiKeyId}"]
+            }
+          }
+        },
+        {
+          "name": "Delete API Key",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys/{apiKeyId}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys", "{apiKeyId}"]
+            }
+          }
+        },
+        {
+          "name": "Regenerate API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys/{apiKeyId}/regenerate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys", "{apiKeyId}", "regenerate"]
+            }
+          }
+        },
+        {
+          "name": "Validate API Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"api_key\": \"{{apiKey}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys/validate",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys", "validate"]
+            }
+          }
+        },
+        {
+          "name": "Get API Key Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/api-keys/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "api-keys", "stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Event Tracking",
+      "item": [
+        {
+          "name": "Collect Single Event",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"event_type\": \"click\",\n  \"element_type\": \"button\",\n  \"page_url\": \"https://example.com/home\",\n  \"element_id\": \"signup-btn\",\n  \"user_id\": \"user-123\",\n  \"session_id\": \"session-456\",\n  \"user_agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\",\n  \"metadata\": {\n    \"button_text\": \"Sign Up\",\n    \"page_title\": \"Home Page\",\n    \"timestamp\": \"2025-08-01T10:30:00Z\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/events",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "events"]
+            }
+          }
+        },
+        {
+          "name": "Collect Batch Events",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-API-Key",
+                "value": "{{apiKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"events\": [\n    {\n      \"event_type\": \"page_view\",\n      \"page_url\": \"https://example.com/home\",\n      \"user_id\": \"user-123\",\n      \"session_id\": \"session-456\",\n      \"metadata\": {\n        \"page_title\": \"Home Page\"\n      }\n    },\n    {\n      \"event_type\": \"click\",\n      \"element_type\": \"link\",\n      \"page_url\": \"https://example.com/home\",\n      \"element_id\": \"nav-about\",\n      \"user_id\": \"user-123\",\n      \"session_id\": \"session-456\",\n      \"metadata\": {\n        \"link_text\": \"About Us\"\n      }\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/events/batch",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "events", "batch"]
+            }
+          }
+        },
+        {
+          "name": "Tracking Health Check",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/health",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "health"]
+            }
+          }
+        },
+        {
+          "name": "Get Events by Date Range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/events?startDate=2025-08-01&endDate=2025-08-01&websiteId={{websiteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "events"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-08-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-08-01"
+                },
+                {
+                  "key": "websiteId",
+                  "value": "{{websiteId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Events by User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/events/user/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "events", "user", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Events by Session",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/events/session/{sessionId}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "events", "session", "{sessionId}"]
+            }
+          }
+        },
+        {
+          "name": "Get Daily Event Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/stats/daily/2025-08-01?websiteId={{websiteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "stats", "daily", "2025-08-01"],
+              "query": [
+                {
+                  "key": "websiteId",
+                  "value": "{{websiteId}}"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Top Pages",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/tracking/stats/top-pages?websiteId={{websiteId}}&limit=10",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "tracking", "stats", "top-pages"],
+              "query": [
+                {
+                  "key": "websiteId",
+                  "value": "{{websiteId}}"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "User Management",
+      "item": [
+        {
+          "name": "Create User",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"properties\": {\n    \"age\": 30,\n    \"location\": \"New York\",\n    \"interests\": [\"technology\", \"travel\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"]
+            }
+          }
+        },
+        {
+          "name": "Get Users",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users?limit=50&offset=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User by ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get User by Email",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/by-email/user@example.com",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "by-email", "user@example.com"]
+            }
+          }
+        },
+        {
+          "name": "Update User",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"John Updated\",\n  \"last_name\": \"Doe Updated\",\n  \"properties\": {\n    \"age\": 31,\n    \"location\": \"San Francisco\",\n    \"interests\": [\"technology\", \"travel\", \"photography\"]\n  }\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Delete User",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get User Activities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/activities?limit=50",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "activities"],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User Stats",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/users/{{userId}}/stats",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "users", "{{userId}}", "stats"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Analytics",
+      "item": [
+        {
+          "name": "Get Realtime Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/realtime/{{websiteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "realtime", "{{websiteId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Historical Reports",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/reports/{{websiteId}}?startDate=2025-08-01&endDate=2025-08-01&metrics=pageviews,users,sessions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "reports", "{{websiteId}}"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-08-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-08-01"
+                },
+                {
+                  "key": "metrics",
+                  "value": "pageviews,users,sessions"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get User Journey",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/user-journey/{{userId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "user-journey", "{{userId}}"]
+            }
+          }
+        },
+        {
+          "name": "Get Page Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/pages/{{websiteId}}?startDate=2025-08-01&endDate=2025-08-01",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "pages", "{{websiteId}}"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-08-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-08-01"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Event Analytics",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/analytics/events/{{websiteId}}?startDate=2025-08-01&endDate=2025-08-01&eventType=click",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "analytics", "events", "{{websiteId}}"],
+              "query": [
+                {
+                  "key": "startDate",
+                  "value": "2025-08-01"
+                },
+                {
+                  "key": "endDate",
+                  "value": "2025-08-01"
+                },
+                {
+                  "key": "eventType",
+                  "value": "click"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Set default headers",
+          "pm.request.headers.add({",
+          "    key: 'Accept',",
+          "    value: 'application/json'",
+          "});"
+        ]
+      }
+    }
+  ]
+}

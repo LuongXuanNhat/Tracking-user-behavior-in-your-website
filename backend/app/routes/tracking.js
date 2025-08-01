@@ -1,38 +1,30 @@
 // routes/tracking.js
+// Routes cho tracking events
+
 import express from "express";
-import { TrackingAPI } from "../api/trackingApi.js";
-import { requireApiKey } from "../middlewares/apikey.js";
+import {
+  collectEvent,
+  collectBatchEvents,
+  getEventsByUser,
+  getEventsBySession,
+  getEventsByDateRange,
+  getDailyEventStats,
+  getTopPages,
+  trackingHealthCheck,
+} from "../api/trackingApi.js";
 
 const router = express.Router();
 
-/**
- * POST /api/tracking/event
- * Ghi nhận hành vi người dùng
- * Yêu cầu API key
- */
-router.post("/event", requireApiKey, TrackingAPI.createEvent);
+// Public routes (chỉ cần API key validation tại controller)
+router.post("/events", collectEvent);
+router.post("/events/batch", collectBatchEvents);
+router.get("/health", trackingHealthCheck);
 
-/**
- * POST /api/tracking/batch
- * Ghi nhận nhiều hành vi cùng lúc
- * Yêu cầu API key
- */
-router.post("/batch", requireApiKey, TrackingAPI.createBatchEvents);
-
-/**
- * GET /api/tracking/events
- * Lấy danh sách các events với filter
- * Yêu cầu API key
- * Query params: date (YYYY-MM-DD) hoặc user_id (bắt buộc), event_type, element_type, page_url, limit, offset
- */
-router.get("/events", requireApiKey, TrackingAPI.getEvents);
-
-/**
- * GET /api/tracking/user/:user_id/events
- * Lấy tất cả events của một user cụ thể
- * Yêu cầu API key
- * Query params: start_date, end_date, event_type, limit
- */
-router.get("/user/:user_id/events", requireApiKey, TrackingAPI.getUserEvents);
+// Protected routes for analytics
+router.get("/events", getEventsByDateRange);
+router.get("/events/user/:userId", getEventsByUser);
+router.get("/events/session/:sessionId", getEventsBySession);
+router.get("/stats/daily/:date", getDailyEventStats);
+router.get("/stats/top-pages", getTopPages);
 
 export default router;

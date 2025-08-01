@@ -1,307 +1,400 @@
 // api/apiKeyApi.js
-// API để quản lý API Keys
+// API endpoints cho quản lý API keys
 
 import { ApiKey } from "../models/ApiKey.js";
-import { v4 as uuidv4 } from "uuid";
+import { Website } from "../models/Website.js";
 
 /**
- * Tạo API key mới
+ * NGHIỆP VỤ 7: QUẢN LÝ CẤU HÌNH - API KEYS
  */
-export const createApiKey = async (req, res) => {
+
+/**
+ * Tạo API key mới cho website
+ * POST /api/api-keys
+ */
+export async function createApiKey(req, res) {
   try {
+    const customerId = req.customer.customerId;
     const {
-      websiteName,
-      websiteUrl,
+      website_id,
       type = "production",
       description = "",
       permissions = {},
+      expires_at = null,
     } = req.body;
 
-    // Validation
-    if (!websiteName || !websiteUrl) {
+    if (!website_id) {
       return res.status(400).json({
-        status: "error",
-        message: "Website name and URL are required",
-        error: "Missing required fields: websiteName, websiteUrl",
+        success: false,
+        message: "website_id là bắt buộc",
       });
     }
 
-    // Validate URL format
-    try {
-      new URL(websiteUrl);
-    } catch (error) {
-      return res.status(400).json({
-        status: "error",
-        message: "Invalid website URL format",
-        error: "Please provide a valid URL (e.g., https://example.com)",
+    // Kiểm tra quyền truy cập website
+    const website = await Website.findById(website_id);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập website này",
       });
     }
 
-    // Validate type
-    const validTypes = ["demo", "test", "production"];
-    if (!validTypes.includes(type)) {
-      return res.status(400).json({
-        status: "error",
-        message: "Invalid API key type",
-        error: `Type must be one of: ${validTypes.join(", ")}`,
-      });
-    }
+    // Tạo API key string
+    const apiKeyString = ApiKey.generateApiKey(website.name, type);
 
-    // Tạo API key với Cassandra integration
-    const newKey = await ApiKey.create({
-      websiteId: uuidv4(), // Generate proper UUID for websiteId
-      websiteName,
-      websiteUrl,
+    // Tạo API key record
+    const apiKey = new ApiKey({
+      api_key: apiKeyString,
+      website_id: website.id,
+      website_name: website.name,
+      website_url: website.url,
       type,
       description,
-      owner: req.apiKeyData?.owner || "admin",
+      owner: req.customer.email,
       permissions,
+      expires_at: expires_at ? new Date(expires_at) : null,
     });
 
+    await apiKey.create();
+
     res.status(201).json({
-      status: "success",
-      message: "API key created successfully",
-      data: {
-        ...newKey,
-        // Chỉ hiển thị API key một lần khi tạo
-        apiKey: newKey.apiKey,
-      },
+      success: true,
+      message: "Tạo API key thành công",
+      data: apiKey.toJSON(),
     });
   } catch (error) {
     console.error("Create API key error:", error);
     res.status(500).json({
-      status: "error",
-      message: "Failed to create API key",
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }
-};
+}
 
 /**
- * Lấy danh sách API keys
+ * Lấy danh sách API keys của customer
+ * GET /api/api-keys
  */
-export const getApiKeys = async (req, res) => {
+export async function getApiKeys(req, res) {
   try {
-    const { type, status, websiteId, page = 1, limit = 10 } = req.query;
+    const customerId = req.customer.customerId;
+    const { website_id } = req.query;
 
-    const filters = {};
-    if (type) filters.type = type;
-    if (status) filters.status = status;
-    if (websiteId) filters.websiteId = parseInt(websiteId);
+    let apiKeys;
 
-    const apiKeys = ApiKey.getAll(filters);
+    if (website_id) {
+      // Kiểm tra quyền truy cập website
+      const website = await Website.findById(website_id);
+      if (!website || website.customer_id !== customerId) {
+        return res.status(403).json({
+          success: false,
+          message: "Không có quyền truy cập website này",
+        });
+      }
 
-    // Pagination
-    const startIndex = (page - 1) * limit;
-    const endIndex = startIndex + parseInt(limit);
-    const paginatedKeys = apiKeys.slice(startIndex, endIndex);
+      apiKeys = await ApiKey.findByWebsiteId(website_id);
+    } else {
+      // Lấy tất cả API keys của customer
+      const websites = await Website.findByCustomerId(customerId);
+      const websiteIds = websites.map((w) => w.id);
+
+      const allApiKeys = await Promise.all(
+        websiteIds.map((id) => ApiKey.findByWebsiteId(id))
+      );
+
+      apiKeys = allApiKeys.flat();
+    }
 
     res.json({
-      status: "success",
-      data: {
-        apiKeys: paginatedKeys,
-        pagination: {
-          page: parseInt(page),
-          limit: parseInt(limit),
-          total: apiKeys.length,
-          totalPages: Math.ceil(apiKeys.length / limit),
-        },
-      },
+      success: true,
+      data: apiKeys.map((key) => key.toJSON()),
     });
   } catch (error) {
     console.error("Get API keys error:", error);
     res.status(500).json({
-      status: "error",
-      message: "Failed to retrieve API keys",
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }
-};
+}
 
 /**
- * Lấy thông tin chi tiết API key
+ * Lấy thông tin một API key cụ thể
+ * GET /api/api-keys/:id
  */
-export const getApiKeyDetails = async (req, res) => {
+export async function getApiKey(req, res) {
   try {
-    const { keyId } = req.params;
+    const customerId = req.customer.customerId;
+    const { id } = req.params;
 
-    // Tìm key theo ID (trong thực tế sẽ dùng database)
-    const allKeys = Array.from(ApiKey.apiKeys?.values() || []);
-    const keyData = allKeys.find((key) => key.id === parseInt(keyId));
-
-    if (!keyData) {
+    const apiKey = await ApiKey.findById(id);
+    if (!apiKey) {
       return res.status(404).json({
-        status: "error",
-        message: "API key not found",
-        error: `No API key found with ID: ${keyId}`,
+        success: false,
+        message: "Không tìm thấy API key",
+      });
+    }
+
+    // Kiểm tra quyền truy cập thông qua website
+    const website = await Website.findById(apiKey.website_id);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập API key này",
       });
     }
 
     res.json({
-      status: "success",
-      data: {
-        ...keyData,
-        apiKey: ApiKey.maskApiKey(keyData.apiKey),
-      },
+      success: true,
+      data: apiKey.toJSON(),
     });
   } catch (error) {
-    console.error("Get API key details error:", error);
+    console.error("Get API key error:", error);
     res.status(500).json({
-      status: "error",
-      message: "Failed to retrieve API key details",
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }
-};
+}
 
 /**
- * Vô hiệu hóa API key
+ * Cập nhật API key
+ * PUT /api/api-keys/:id
  */
-export const disableApiKey = async (req, res) => {
+export async function updateApiKey(req, res) {
   try {
-    const { keyId } = req.params;
-    const { reason = "Manual disable by admin" } = req.body;
+    const customerId = req.customer.customerId;
+    const { id } = req.params;
+    const { description, status, permissions, expires_at } = req.body;
 
-    // Tìm key theo ID
-    const allKeys = Array.from(ApiKey.apiKeys?.values() || []);
-    const keyData = allKeys.find((key) => key.id === parseInt(keyId));
-
-    if (!keyData) {
+    const apiKey = await ApiKey.findById(id);
+    if (!apiKey) {
       return res.status(404).json({
-        status: "error",
-        message: "API key not found",
-        error: `No API key found with ID: ${keyId}`,
+        success: false,
+        message: "Không tìm thấy API key",
       });
     }
 
-    const success = ApiKey.disable(keyData.apiKey, reason);
-
-    if (success) {
-      res.json({
-        status: "success",
-        message: "API key disabled successfully",
-        data: {
-          id: keyData.id,
-          status: "disabled",
-          reason,
-        },
-      });
-    } else {
-      res.status(500).json({
-        status: "error",
-        message: "Failed to disable API key",
+    // Kiểm tra quyền truy cập thông qua website
+    const website = await Website.findById(apiKey.website_id);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập API key này",
       });
     }
+
+    const updateData = {};
+    if (description !== undefined) updateData.description = description;
+    if (status !== undefined) updateData.status = status;
+    if (permissions !== undefined) updateData.permissions = permissions;
+    if (expires_at !== undefined)
+      updateData.expires_at = expires_at ? new Date(expires_at) : null;
+
+    await apiKey.update(updateData);
+
+    res.json({
+      success: true,
+      message: "Cập nhật API key thành công",
+      data: apiKey.toJSON(),
+    });
   } catch (error) {
-    console.error("Disable API key error:", error);
+    console.error("Update API key error:", error);
     res.status(500).json({
-      status: "error",
-      message: "Failed to disable API key",
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }
-};
+}
 
 /**
- * Gia hạn API key
+ * Xóa API key
+ * DELETE /api/api-keys/:id
  */
-export const extendApiKey = async (req, res) => {
+export async function deleteApiKey(req, res) {
   try {
-    const { keyId } = req.params;
-    const { extensionDays = 365 } = req.body;
+    const customerId = req.customer.customerId;
+    const { id } = req.params;
 
-    // Validation
-    if (extensionDays <= 0 || extensionDays > 1095) {
-      // Max 3 years
+    const apiKey = await ApiKey.findById(id);
+    if (!apiKey) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy API key",
+      });
+    }
+
+    // Kiểm tra quyền truy cập thông qua website
+    const website = await Website.findById(apiKey.website_id);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập API key này",
+      });
+    }
+
+    // Kiểm tra xem có phải API key cuối cùng của website không
+    const websiteApiKeys = await ApiKey.findByWebsiteId(apiKey.website_id);
+    const activeKeys = websiteApiKeys.filter((key) => key.status === "active");
+
+    if (activeKeys.length === 1 && activeKeys[0].id === apiKey.id) {
       return res.status(400).json({
-        status: "error",
-        message: "Invalid extension period",
-        error: "Extension days must be between 1 and 1095 (3 years)",
+        success: false,
+        message: "Không thể xóa API key cuối cùng của website",
       });
     }
 
-    // Tìm key theo ID
-    const allKeys = Array.from(ApiKey.apiKeys?.values() || []);
-    const keyData = allKeys.find((key) => key.id === parseInt(keyId));
+    await apiKey.delete();
 
-    if (!keyData) {
-      return res.status(404).json({
-        status: "error",
-        message: "API key not found",
-        error: `No API key found with ID: ${keyId}`,
-      });
-    }
-
-    const updatedKey = ApiKey.extend(keyData.apiKey, extensionDays);
-
-    if (updatedKey) {
-      res.json({
-        status: "success",
-        message: "API key extended successfully",
-        data: {
-          id: updatedKey.id,
-          expires_at: updatedKey.expires_at,
-          extension_days: extensionDays,
-        },
-      });
-    } else {
-      res.status(500).json({
-        status: "error",
-        message: "Failed to extend API key",
-      });
-    }
+    res.json({
+      success: true,
+      message: "Xóa API key thành công",
+    });
   } catch (error) {
-    console.error("Extend API key error:", error);
+    console.error("Delete API key error:", error);
     res.status(500).json({
-      status: "error",
-      message: "Failed to extend API key",
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }
-};
+}
 
 /**
- * Lấy thống kê API keys
+ * Xác thực API key (public endpoint)
+ * POST /api/api-keys/validate
  */
-export const getApiKeyStats = async (req, res) => {
+export async function validateApiKey(req, res) {
   try {
-    const allKeys = Array.from(ApiKey.apiKeys?.values() || []);
+    const { api_key } = req.body;
 
-    const stats = {
-      total: allKeys.length,
-      active: allKeys.filter((key) => key.status === "active").length,
-      disabled: allKeys.filter((key) => key.status === "disabled").length,
-      expired: allKeys.filter(
-        (key) => key.expires_at && new Date() > new Date(key.expires_at)
-      ).length,
-      byType: {
-        demo: allKeys.filter((key) => key.type === "demo").length,
-        test: allKeys.filter((key) => key.type === "test").length,
-        production: allKeys.filter((key) => key.type === "production").length,
-      },
-      totalUsage: allKeys.reduce((sum, key) => sum + (key.usage_count || 0), 0),
-      mostUsed: allKeys
-        .filter((key) => key.usage_count > 0)
-        .sort((a, b) => b.usage_count - a.usage_count)
-        .slice(0, 5)
-        .map((key) => ({
-          id: key.id,
-          websiteName: key.websiteName,
-          usage_count: key.usage_count,
-          last_used: key.last_used,
-        })),
-    };
+    if (!api_key) {
+      return res.status(400).json({
+        success: false,
+        message: "api_key là bắt buộc",
+      });
+    }
+
+    const validation = await ApiKey.validateApiKey(api_key);
+
+    if (validation.valid) {
+      const apiKey = validation.apiKey;
+      const website = await Website.findById(apiKey.website_id);
+
+      res.json({
+        success: true,
+        message: "API key hợp lệ",
+        data: {
+          api_key: apiKey.toJSON(),
+          website: website ? website.toJSON() : null,
+        },
+      });
+    } else {
+      res.status(401).json({
+        success: false,
+        message: validation.reason,
+      });
+    }
+  } catch (error) {
+    console.error("Validate API key error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Regenerate API key (tạo key mới thay thế key cũ)
+ * POST /api/api-keys/:id/regenerate
+ */
+export async function regenerateApiKey(req, res) {
+  try {
+    const customerId = req.customer.customerId;
+    const { id } = req.params;
+
+    const oldApiKey = await ApiKey.findById(id);
+    if (!oldApiKey) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy API key",
+      });
+    }
+
+    // Kiểm tra quyền truy cập thông qua website
+    const website = await Website.findById(oldApiKey.website_id);
+    if (!website || website.customer_id !== customerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập API key này",
+      });
+    }
+
+    // Tạo API key string mới
+    const newApiKeyString = ApiKey.generateApiKey(website.name, oldApiKey.type);
+
+    // Tạo API key record mới
+    const newApiKey = new ApiKey({
+      api_key: newApiKeyString,
+      website_id: oldApiKey.website_id,
+      website_name: oldApiKey.website_name,
+      website_url: oldApiKey.website_url,
+      type: oldApiKey.type,
+      description: oldApiKey.description + " (regenerated)",
+      owner: oldApiKey.owner,
+      permissions: oldApiKey.permissions,
+      expires_at: oldApiKey.expires_at,
+    });
+
+    await newApiKey.create();
+
+    // Deactivate API key cũ
+    await oldApiKey.update({
+      status: "inactive",
+      description: oldApiKey.description + " (replaced)",
+    });
 
     res.json({
-      status: "success",
+      success: true,
+      message: "Regenerate API key thành công",
+      data: {
+        new_api_key: newApiKey.toJSON(),
+        old_api_key: oldApiKey.toJSON(),
+      },
+    });
+  } catch (error) {
+    console.error("Regenerate API key error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Thống kê API keys
+ * GET /api/api-keys/stats
+ */
+export async function getApiKeyStats(req, res) {
+  try {
+    const stats = await ApiKey.getStats();
+
+    res.json({
+      success: true,
       data: stats,
     });
   } catch (error) {
     console.error("Get API key stats error:", error);
     res.status(500).json({
-      status: "error",
-      message: "Failed to retrieve API key statistics",
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }
-};
+}

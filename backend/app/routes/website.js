@@ -1,70 +1,29 @@
 // routes/website.js
+// Routes cho website management
+
 import express from "express";
-import { WebsiteAPI } from "../api/websiteApi.js";
-import { requireApiKey, requirePermission } from "../middlewares/apikey.js";
+import {
+  createWebsite,
+  getWebsites,
+  getWebsite,
+  updateWebsite,
+  deleteWebsite,
+  getTrackingCode,
+  getWebsiteStats,
+} from "../api/websiteApi.js";
+import { authenticateCustomer } from "../middlewares/authenticateCustomer.js";
 
 const router = express.Router();
 
-/**
- * GET /api/websites
- * Lấy tất cả websites
- */
-router.get("/", requireApiKey, WebsiteAPI.getAllWebsites);
+// All routes require authentication
+router.use(authenticateCustomer);
 
-/**
- * POST /api/websites
- * Tạo website mới với API key
- */
-router.post(
-  "/",
-  requireApiKey,
-  requirePermission("users"),
-  WebsiteAPI.createWebsite
-);
-
-/**
- * GET /api/websites/stats
- * Lấy thống kê websites
- */
-router.get("/stats", requireApiKey, WebsiteAPI.getWebsiteStats);
-
-/**
- * GET /api/websites/:id
- * Lấy thông tin website theo ID
- */
-router.get("/:id", requireApiKey, WebsiteAPI.getWebsiteById);
-
-/**
- * PUT /api/websites/:id
- * Cập nhật website
- */
-router.put(
-  "/:id",
-  requireApiKey,
-  requirePermission("users"),
-  WebsiteAPI.updateWebsite
-);
-
-/**
- * DELETE /api/websites/:id
- * Xóa website
- */
-router.delete(
-  "/:id",
-  requireApiKey,
-  requirePermission("users"),
-  WebsiteAPI.deleteWebsite
-);
-
-/**
- * POST /api/websites/:id/regenerate-key
- * Tạo lại API key cho website
- */
-router.post(
-  "/:id/regenerate-key",
-  requireApiKey,
-  requirePermission("users"),
-  WebsiteAPI.regenerateApiKey
-);
+router.post("/", createWebsite);
+router.get("/", getWebsites);
+router.get("/stats", getWebsiteStats);
+router.get("/:id", getWebsite);
+router.put("/:id", updateWebsite);
+router.delete("/:id", deleteWebsite);
+router.get("/:id/tracking-code", getTrackingCode);
 
 export default router;

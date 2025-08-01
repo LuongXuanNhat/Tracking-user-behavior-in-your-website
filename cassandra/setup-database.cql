@@ -10,7 +10,24 @@ WITH replication = {
 
 USE user_logs;
 
--- Create users table
+-- Create customers table
+CREATE TABLE IF NOT EXISTS customers (
+    id UUID PRIMARY KEY,
+    name TEXT,
+    email TEXT,
+    password_hash TEXT,
+    status TEXT,
+    subscription_plan TEXT,
+    created_at TIMESTAMP,
+    updated_at TIMESTAMP,
+    last_login TIMESTAMP,
+    settings MAP<TEXT, TEXT>
+);
+
+-- Create index on email for faster queries
+CREATE INDEX IF NOT EXISTS customers_email_idx ON customers (email);
+
+-- Create users table (for website visitors)
 CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY,
     name TEXT,
@@ -27,20 +44,19 @@ CREATE TABLE IF NOT EXISTS websites (
     id UUID PRIMARY KEY,
     name TEXT,
     url TEXT,
-    api_key TEXT,
+    customer_id UUID,
     type TEXT,
     description TEXT,
-    owner TEXT,
     status TEXT,
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    last_used TIMESTAMP,
-    usage_count BIGINT,
-    permissions MAP<TEXT, TEXT>
+    last_activity TIMESTAMP,
+    monthly_events BIGINT,
+    tracking_settings MAP<TEXT, TEXT>
 );
 
--- Create index on api_key for authentication
-CREATE INDEX IF NOT EXISTS websites_api_key_idx ON websites (api_key);
+-- Create index on customer_id for faster queries
+CREATE INDEX IF NOT EXISTS websites_customer_id_idx ON websites (customer_id);
 
 -- Create api_keys table
 CREATE TABLE IF NOT EXISTS api_keys (

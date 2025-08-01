@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 // middlewares/apikey.js
 // Middleware kiểm tra API Key động từ database
 
