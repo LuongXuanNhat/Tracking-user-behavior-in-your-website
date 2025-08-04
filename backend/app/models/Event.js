@@ -648,20 +648,38 @@ export class Event {
   /**
    * Thống kê events theo website và ngày
    */
-  static async getDailyStats(websiteId, date) {
+  static async getDailyStats(websiteIdOrDate, date = null) {
     try {
       const client = cassandraConnection.getClient();
 
-      // Query from the daily metrics table if available, otherwise aggregate from events
-      let query = `
-        SELECT event_type, COUNT(*) as count
-        FROM ${KEYSPACE}.events 
-        WHERE website_id = ? AND event_date = ?
-        GROUP BY event_type
-        ALLOW FILTERING
-      `;
+      let query, params;
 
-      const result = await client.execute(query, [websiteId, date], {
+      // Handle overloaded method - if only one parameter, treat it as date (global stats)
+      if (date === null) {
+        // Global stats for all websites on given date
+        const targetDate = websiteIdOrDate;
+        query = `
+          SELECT event_type, COUNT(*) as count
+          FROM ${KEYSPACE}.events 
+          WHERE event_date = ?
+          GROUP BY event_type
+          ALLOW FILTERING
+        `;
+        params = [targetDate];
+      } else {
+        // Stats for specific website and date
+        const websiteId = websiteIdOrDate;
+        query = `
+          SELECT event_type, COUNT(*) as count
+          FROM ${KEYSPACE}.events 
+          WHERE website_id = ? AND event_date = ?
+          GROUP BY event_type
+          ALLOW FILTERING
+        `;
+        params = [websiteId, date];
+      }
+
+      const result = await client.execute(query, params, {
         prepare: true,
       });
 
@@ -678,13 +696,43 @@ export class Event {
   }
 
   /**
-   * Lấy top pages theo số events cho website
+   * Lấy top pages theo số events cho website (overloaded method)
    */
-  static async getTopPages(websiteId, startDate, endDate = null, limit = 10) {
+  static async getTopPages(
+    websiteIdOrStartDate,
+    startDateOrEndDate = null,
+    endDateOrLimit = null,
+    limitOrNull = 10
+  ) {
     try {
       const client = cassandraConnection.getClient();
 
-      if (!endDate) endDate = startDate;
+      let websiteId, startDate, endDate, limit;
+
+      // Handle overloaded method signatures
+      if (
+        startDateOrEndDate === null ||
+        typeof startDateOrEndDate === "number"
+      ) {
+        // Global stats: getTopPages(startDate, endDate, limit) or getTopPages(startDate, limit)
+        startDate = websiteIdOrStartDate;
+        if (typeof startDateOrEndDate === "number") {
+          // getTopPages(startDate, limit)
+          endDate = startDate;
+          limit = startDateOrEndDate;
+        } else {
+          // getTopPages(startDate, endDate, limit)
+          endDate = endDateOrLimit || startDate;
+          limit = limitOrNull;
+        }
+        websiteId = null;
+      } else {
+        // Website-specific stats: getTopPages(websiteId, startDate, endDate, limit)
+        websiteId = websiteIdOrStartDate;
+        startDate = startDateOrEndDate;
+        endDate = endDateOrLimit || startDate;
+        limit = limitOrNull;
+      }
 
       const dates =
         startDate === endDate
@@ -695,15 +743,31 @@ export class Event {
       const pageStats = new Map();
 
       for (const date of dates) {
-        const query = `
-          SELECT page_url, COUNT(*) as count
-          FROM ${KEYSPACE}.events 
-          WHERE website_id = ? AND event_date = ?
-          GROUP BY page_url
-          ALLOW FILTERING
-        `;
+        let query, params;
 
-        const result = await client.execute(query, [websiteId, date], {
+        if (websiteId) {
+          // Website-specific query
+          query = `
+            SELECT page_url, COUNT(*) as count
+            FROM ${KEYSPACE}.events 
+            WHERE website_id = ? AND event_date = ?
+            GROUP BY page_url
+            ALLOW FILTERING
+          `;
+          params = [websiteId, date];
+        } else {
+          // Global query for all websites
+          query = `
+            SELECT page_url, COUNT(*) as count
+            FROM ${KEYSPACE}.events 
+            WHERE event_date = ?
+            GROUP BY page_url
+            ALLOW FILTERING
+          `;
+          params = [date];
+        }
+
+        const result = await client.execute(query, params, {
           prepare: true,
         });
 
@@ -799,6 +863,137 @@ export class Event {
       return result.rows.map((row) => new Event(row));
     } catch (error) {
       console.error("Error getting session timeline:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Tìm events theo date range (không cần website_id - cho global queries)
+   */
+  static async findByDateRange(startDate, endDate = null, limit = 100) {
+    try {
+      const client = cassandraConnection.getClient();
+
+      if (!endDate) endDate = startDate;
+
+      // Generate date range
+      const dates =
+        startDate === endDate
+          ? [startDate]
+          : this.generateDateRange(startDate, endDate);
+
+      const allEvents = [];
+
+      // Query each date separately and collect results
+      for (const date of dates) {
+        const query = `
+          SELECT * FROM ${KEYSPACE}.events 
+          WHERE event_date = ?
+          ALLOW FILTERING
+        `;
+
+        const result = await client.execute(query, [date], {
+          prepare: true,
+        });
+
+        allEvents.push(...result.rows);
+      }
+
+      // Sort by event_time descending and apply limit
+      allEvents.sort((a, b) => new Date(b.event_time) - new Date(a.event_time));
+
+      return allEvents.slice(0, limit).map((row) => new Event(row));
+    } catch (error) {
+      console.error("Error finding events by date range:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Tìm events theo user ID
+   */
+  static async findByUserId(userId, startDate, endDate = null, limit = 100) {
+    try {
+      const client = cassandraConnection.getClient();
+
+      if (!endDate) endDate = startDate;
+
+      // Generate date range
+      const dates =
+        startDate === endDate
+          ? [startDate]
+          : this.generateDateRange(startDate, endDate);
+
+      const allEvents = [];
+
+      // Query each date separately
+      for (const date of dates) {
+        const query = `
+          SELECT * FROM ${KEYSPACE}.events 
+          WHERE event_date = ? AND visitor_id = ?
+          ALLOW FILTERING
+        `;
+
+        const result = await client.execute(query, [date, userId], {
+          prepare: true,
+        });
+
+        allEvents.push(...result.rows);
+      }
+
+      // Sort by event_time descending and apply limit
+      allEvents.sort((a, b) => new Date(b.event_time) - new Date(a.event_time));
+
+      return allEvents.slice(0, limit).map((row) => new Event(row));
+    } catch (error) {
+      console.error("Error finding events by user ID:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Tìm events theo session ID
+   */
+  static async findBySessionId(
+    sessionId,
+    startDate,
+    endDate = null,
+    limit = 100
+  ) {
+    try {
+      const client = cassandraConnection.getClient();
+
+      if (!endDate) endDate = startDate;
+
+      // Generate date range
+      const dates =
+        startDate === endDate
+          ? [startDate]
+          : this.generateDateRange(startDate, endDate);
+
+      const allEvents = [];
+
+      // Query each date separately
+      for (const date of dates) {
+        const query = `
+          SELECT * FROM ${KEYSPACE}.events 
+          WHERE event_date = ? AND session_id = ?
+          ALLOW FILTERING
+        `;
+
+        const result = await client.execute(query, [date, sessionId], {
+          prepare: true,
+        });
+
+        allEvents.push(...result.rows);
+      }
+
+      // Sort by event_time ascending for session timeline
+      allEvents.sort((a, b) => new Date(a.event_time) - new Date(b.event_time));
+
+      return allEvents.slice(0, limit).map((row) => new Event(row));
+    } catch (error) {
+      console.error("Error finding events by session ID:", error);
       throw error;
     }
   }

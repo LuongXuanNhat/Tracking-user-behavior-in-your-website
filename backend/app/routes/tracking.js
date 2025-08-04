@@ -23,7 +23,7 @@ router.get("/health", validateApiKey, trackingHealthCheck);
 
 // Protected routes for analytics
 router.get("/events", validateApiKey, getEventsByDateRange);
-router.get("/events/user/:userId", validateApiKey, getEventsByUser);
+router.get("/events/visitor/:userId", validateApiKey, getEventsByUser);
 router.get("/events/session/:sessionId", validateApiKey, getEventsBySession);
 router.get("/stats/daily/:date", validateApiKey, getDailyEventStats);
 router.get("/stats/top-pages", validateApiKey, getTopPages);

@@ -62,6 +62,31 @@ npm run start
 # Backend API sẽ chạy tại http://localhost:3001
 ```
 
+### Các nơi đã cắm sự kiện
+
+```bash
+- HomePage
+   - Cuộn trang
+- Service
+   - Detail
+      - Click image
+- Product
+- Review
+   - Detail
+      - Copy link
+      - Click image
+      - Cuộn trang
+- Story
+   - Detail
+      - Copy link
+      - Click image
+      - Cuộn trang
+- Promotion
+- About
+   - Click link
+
+```
+
 ## 🏗️ Cấu trúc Backend
 
 ```
