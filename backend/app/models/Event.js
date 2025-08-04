@@ -36,9 +36,14 @@ export class Event {
     this.element_text = data.element_text;
 
     // Device and browser information
-    this.device_type = data.device_type; // desktop, mobile, tablet
-    this.browser = data.browser;
-    this.os = data.os;
+    this.browser = data.browser
+      ? data.browser
+      : this.parseBrowserName(data.browser || data.user_agent);
+    this.device_type =
+      data.device_type ||
+      this.detectDeviceType(data.browser || data.user_agent); // desktop, mobile, tablet
+
+    this.os = data.os ? data.os : this.parseOS(data.browser || data.user_agent);
 
     // Location and tracking
     this.ip_address = data.ip_address;
@@ -69,6 +74,151 @@ export class Event {
     } else {
       this.properties = {};
     }
+  }
+
+  /**
+   * Parse browser name from user agent string
+   */
+  parseBrowserName(userAgentString) {
+    if (!userAgentString) {
+      return "Unknown";
+    }
+
+    const userAgent = userAgentString.toLowerCase();
+
+    // Browser detection patterns - order matters (more specific first)
+    if (userAgent.includes("edg/")) {
+      return "Microsoft Edge";
+    } else if (userAgent.includes("chrome/") && !userAgent.includes("edg/")) {
+      return "Chrome";
+    } else if (userAgent.includes("firefox/")) {
+      return "Firefox";
+    } else if (
+      userAgent.includes("safari/") &&
+      !userAgent.includes("chrome/")
+    ) {
+      return "Safari";
+    } else if (userAgent.includes("opera/") || userAgent.includes("opr/")) {
+      return "Opera";
+    } else if (userAgent.includes("msie") || userAgent.includes("trident/")) {
+      return "Internet Explorer";
+    } else if (userAgent.includes("samsung")) {
+      return "Samsung Internet";
+    } else if (userAgent.includes("ucbrowser")) {
+      return "UC Browser";
+    } else if (userAgent.includes("yabrowser")) {
+      return "Yandex Browser";
+    } else if (userAgent.includes("vivaldi")) {
+      return "Vivaldi";
+    } else if (userAgent.includes("brave")) {
+      return "Brave";
+    } else {
+      return "Unknown";
+    }
+  }
+
+  /**
+   * Parse OS from user agent string
+   */
+  parseOS(userAgentString) {
+    if (!userAgentString) {
+      return "Unknown";
+    }
+
+    const userAgent = userAgentString.toLowerCase();
+
+    // OS detection patterns
+    if (userAgent.includes("windows nt 10.0")) {
+      return "Windows 10/11";
+    } else if (userAgent.includes("windows nt 6.3")) {
+      return "Windows 8.1";
+    } else if (userAgent.includes("windows nt 6.2")) {
+      return "Windows 8";
+    } else if (userAgent.includes("windows nt 6.1")) {
+      return "Windows 7";
+    } else if (userAgent.includes("windows")) {
+      return "Windows";
+    } else if (userAgent.includes("mac os x")) {
+      const macMatch = userAgent.match(/mac os x (\d+[._]\d+)/);
+      return macMatch ? `macOS ${macMatch[1].replace("_", ".")}` : "macOS";
+    } else if (userAgent.includes("iphone os")) {
+      const iosMatch = userAgent.match(/iphone os (\d+[._]\d+)/);
+      return iosMatch ? `iOS ${iosMatch[1].replace("_", ".")}` : "iOS";
+    } else if (userAgent.includes("ipad")) {
+      return "iPadOS";
+    } else if (userAgent.includes("android")) {
+      const androidMatch = userAgent.match(/android (\d+\.?\d*)/);
+      return androidMatch ? `Android ${androidMatch[1]}` : "Android";
+    } else if (userAgent.includes("linux")) {
+      return "Linux";
+    } else if (userAgent.includes("ubuntu")) {
+      return "Ubuntu";
+    } else if (userAgent.includes("cros")) {
+      return "Chrome OS";
+    } else {
+      return "Unknown";
+    }
+  }
+
+  /**
+   * Detect device type from browser/user agent string
+   */
+  detectDeviceType(browserString) {
+    if (!browserString) {
+      return "desktop"; // default fallback
+    }
+
+    const userAgent = browserString.toLowerCase();
+
+    // Mobile patterns
+    const mobilePatterns = [
+      /mobile/,
+      /android/,
+      /iphone/,
+      /ipod/,
+      /blackberry/,
+      /windows phone/,
+      /opera mini/,
+      /iemobile/,
+      /webos/,
+      /palm/,
+      /symbian/,
+      /nokia/,
+      /samsung/,
+      /htc/,
+      /motorola/,
+      /fennec/,
+      /mobi/,
+    ];
+
+    // Tablet patterns
+    const tabletPatterns = [
+      /ipad/,
+      /tablet/,
+      /kindle/,
+      /silk/,
+      /playbook/,
+      /gt-p\d{4}/,
+      /sm-t\d{3}/,
+      /android(?!.*mobile)/,
+    ];
+
+    // Check for tablet first (more specific)
+    for (const pattern of tabletPatterns) {
+      if (pattern.test(userAgent)) {
+        return "tablet";
+      }
+    }
+
+    // Then check for mobile
+    for (const pattern of mobilePatterns) {
+      if (pattern.test(userAgent)) {
+        return "mobile";
+      }
+    }
+
+    // Default to desktop
+    return "desktop";
   }
 
   /**
