@@ -158,7 +158,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.updated@example.com\",\n  \"subscription_plan\": \"premium\"\n}"
+              "raw": "{\n  \"name\": \"John Doe Updated\",\n  \"email\": \"john.updated@example.com\",\n  \"plan\": \"premium\"\n}"
             },
             "url": {
               "raw": "{{baseUrl}}/api/customers/profile",

@@ -12,19 +12,20 @@ import {
   getTopPages,
   trackingHealthCheck,
 } from "../api/trackingApi.js";
+import { validateApiKey } from "../middlewares/apikey.js";
 
 const router = express.Router();
 
 // Public routes (chỉ cần API key validation tại controller)
-router.post("/events", collectEvent);
-router.post("/events/batch", collectBatchEvents);
-router.get("/health", trackingHealthCheck);
+router.post("/events", validateApiKey, collectEvent);
+router.post("/events/batch", validateApiKey, collectBatchEvents);
+router.get("/health", validateApiKey, trackingHealthCheck);
 
 // Protected routes for analytics
-router.get("/events", getEventsByDateRange);
-router.get("/events/user/:userId", getEventsByUser);
-router.get("/events/session/:sessionId", getEventsBySession);
-router.get("/stats/daily/:date", getDailyEventStats);
-router.get("/stats/top-pages", getTopPages);
+router.get("/events", validateApiKey, getEventsByDateRange);
+router.get("/events/user/:userId", validateApiKey, getEventsByUser);
+router.get("/events/session/:sessionId", validateApiKey, getEventsBySession);
+router.get("/stats/daily/:date", validateApiKey, getDailyEventStats);
+router.get("/stats/top-pages", validateApiKey, getTopPages);
 
 export default router;

@@ -1,0 +1,19 @@
+-- Xóa 1 dòng dữ liệu bảng customers
+docker exec -it cassandra_user_logs cqlsh -e "DELETE FROM user_behavior_analytics.customers WHERE customer_id = <>;"
+
+-- Tạo database: Copy file -> run file
+docker cp cassandra/database_v2.cql cassandra_user_logs:/database_v2.cql && docker exec -it cassandra_user_logs cqlsh -f /database_v2.cql
+
+-- Xóa keyspace
+docker exec -i cassandra_user_logs cqlsh -e "DROP KEYSPACE IF EXISTS user_behavior_analytics;"
+
+-- Khởi động docker
+docker compose up -d 
+
+-- Truy cập cqlsh 
+docker exec -it cassandra_user_logs cqlsh
+
+-- Tạo index cho api_key trên bảng Website:
+docker exec -i cassandra_user_logs cqlsh -e "USE user_behavior_analytics; CREATE INDEX IF NOT EXISTS api_key_index ON websites (api_key);"
+
+

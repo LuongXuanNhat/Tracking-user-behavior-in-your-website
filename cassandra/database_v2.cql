@@ -1,5 +1,5 @@
 -- Advanced Cassandra Schema for User Behavior Tracking System
--- Designed for multi-tenant, high-performance analytics
+-- Fixed version with proper Cassandra constraints
 
 -- Create keyspace with NetworkTopologyStrategy for production
 CREATE KEYSPACE IF NOT EXISTS user_behavior_analytics
@@ -28,9 +28,6 @@ CREATE TABLE IF NOT EXISTS customers (
     last_login TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS customers_email_idx ON customers (email);
-CREATE INDEX IF NOT EXISTS customers_status_idx ON customers (status);
-
 -- Websites/Properties table (belongs to customers)
 CREATE TABLE IF NOT EXISTS websites (
     website_id UUID PRIMARY KEY,
@@ -46,38 +43,18 @@ CREATE TABLE IF NOT EXISTS websites (
     last_activity TIMESTAMP
 );
 
-CREATE INDEX IF NOT EXISTS websites_customer_idx ON websites (customer_id);
-CREATE INDEX IF NOT EXISTS websites_domain_idx ON websites (domain);
-
--- API Keys management
-CREATE TABLE IF NOT EXISTS api_keys (
-    api_key TEXT PRIMARY KEY,
-    website_id UUID,
-    customer_id UUID,
-    name TEXT,
-    permissions SET<TEXT>, -- read, write, admin
-    rate_limit INT,
-    status TEXT, -- active, revoked, expired
-    created_at TIMESTAMP,
-    expires_at TIMESTAMP,
-    last_used TIMESTAMP,
-    usage_count COUNTER
-);
-
-CREATE INDEX IF NOT EXISTS api_keys_website_idx ON api_keys (website_id);
-
 -- ====================================
 -- USER TRACKING TABLES
 -- ====================================
 
--- Visitors table (anonymous users before identification)
+-- Visitors table (fixed - removed counters from complex partition)
 CREATE TABLE IF NOT EXISTS visitors (
     visitor_id UUID PRIMARY KEY,
     website_id UUID,
     first_seen TIMESTAMP,
     last_seen TIMESTAMP,
-    session_count COUNTER,
-    page_views COUNTER,
+    session_count BIGINT, -- changed from COUNTER
+    page_views BIGINT, -- changed from COUNTER
     total_time_spent BIGINT, -- in seconds
     device_info MAP<TEXT, TEXT>,
     location_info MAP<TEXT, TEXT>,
@@ -85,6 +62,14 @@ CREATE TABLE IF NOT EXISTS visitors (
     utm_source TEXT,
     utm_medium TEXT,
     utm_campaign TEXT
+);
+
+-- Separate counter table for visitor metrics
+CREATE TABLE IF NOT EXISTS visitor_counters (
+    visitor_id UUID PRIMARY KEY,
+    session_count COUNTER,
+    page_views COUNTER,
+    total_events COUNTER
 );
 
 -- Identified users (after login/registration)
@@ -101,11 +86,8 @@ CREATE TABLE IF NOT EXISTS identified_users (
     segment TEXT
 );
 
-CREATE INDEX IF NOT EXISTS identified_users_website_idx ON identified_users (website_id);
-CREATE INDEX IF NOT EXISTS identified_users_external_idx ON identified_users (external_user_id);
-
 -- ====================================
--- EVENT TRACKING TABLES (Optimized for different query patterns)
+-- EVENT TRACKING TABLES
 -- ====================================
 
 -- Primary events table - partitioned by website and date for write optimization
@@ -181,10 +163,10 @@ CREATE TABLE IF NOT EXISTS events_by_type (
 ) WITH CLUSTERING ORDER BY (event_date DESC, event_time DESC);
 
 -- ====================================
--- SESSION TRACKING
+-- SESSION TRACKING (FIXED)
 -- ====================================
 
--- Sessions table for session-level analytics
+-- Sessions table for session-level analytics (fixed - no counters in complex partition)
 CREATE TABLE IF NOT EXISTS sessions (
     website_id UUID,
     session_date TEXT, -- YYYY-MM-DD
@@ -194,8 +176,8 @@ CREATE TABLE IF NOT EXISTS sessions (
     start_time TIMESTAMP,
     end_time TIMESTAMP,
     duration BIGINT, -- seconds
-    page_views COUNTER,
-    events_count COUNTER,
+    page_views BIGINT, -- changed from COUNTER
+    events_count BIGINT, -- changed from COUNTER
     bounce BOOLEAN, -- single page session
     conversion BOOLEAN, -- achieved goal
     entry_page TEXT,
@@ -209,18 +191,27 @@ CREATE TABLE IF NOT EXISTS sessions (
     PRIMARY KEY ((website_id, session_date), start_time, session_id)
 ) WITH CLUSTERING ORDER BY (start_time DESC);
 
+-- Separate counter table for session metrics
+CREATE TABLE IF NOT EXISTS session_counters (
+    session_id UUID PRIMARY KEY,
+    page_views COUNTER,
+    events_count COUNTER,
+    scroll_events COUNTER,
+    click_events COUNTER
+);
+
 -- Active sessions for real-time tracking
 CREATE TABLE IF NOT EXISTS active_sessions (
-    website_id UUID,
-    session_id UUID PRIMARY KEY,
+    website_id UUID PRIMARY KEY,
+    session_id UUID,
     visitor_id UUID,
     start_time TIMESTAMP,
     last_activity TIMESTAMP,
     current_page TEXT,
-    page_views COUNTER,
-    events_count COUNTER,
-    ttl INT -- time to live in seconds
-);
+    page_views BIGINT, -- changed from COUNTER for simple partition
+    events_count BIGINT, -- changed from COUNTER for simple partition
+    ttl_seconds INT -- time to live in seconds
+) WITH default_time_to_live = 3600;
 
 -- ====================================
 -- ANALYTICS & REPORTING TABLES
@@ -234,9 +225,9 @@ CREATE TABLE IF NOT EXISTS daily_website_metrics (
     total_sessions COUNTER,
     total_pageviews COUNTER,
     total_events COUNTER,
-    bounce_rate DECIMAL,
-    avg_session_duration DECIMAL,
-    conversion_rate DECIMAL,
+    bounce_sessions COUNTER,
+    conversion_sessions COUNTER,
+    total_session_duration COUNTER, -- for calculating avg
     top_pages MAP<TEXT, BIGINT>,
     top_events MAP<TEXT, BIGINT>,
     device_breakdown MAP<TEXT, BIGINT>, -- desktop:1000, mobile:500
@@ -262,10 +253,10 @@ CREATE TABLE IF NOT EXISTS page_metrics (
     metric_date TEXT,
     views COUNTER,
     unique_visitors COUNTER,
-    avg_time_on_page DECIMAL,
-    bounce_rate DECIMAL,
-    exit_rate DECIMAL,
-    scroll_depth_avg DECIMAL,
+    total_time_on_page COUNTER, -- for calculating avg
+    bounce_count COUNTER,
+    exit_count COUNTER,
+    total_scroll_depth COUNTER, -- for calculating avg
     click_events COUNTER,
     PRIMARY KEY ((website_id, page_url), metric_date)
 ) WITH CLUSTERING ORDER BY (metric_date DESC);
@@ -278,8 +269,8 @@ CREATE TABLE IF NOT EXISTS event_metrics (
     metric_date TEXT,
     total_count COUNTER,
     unique_users COUNTER,
-    conversion_rate DECIMAL,
-    avg_value DECIMAL, -- for events with values
+    conversion_count COUNTER,
+    total_value COUNTER, -- for events with values
     PRIMARY KEY ((website_id, event_type), event_name, metric_date)
 ) WITH CLUSTERING ORDER BY (event_name ASC, metric_date DESC);
 
@@ -308,8 +299,7 @@ CREATE TABLE IF NOT EXISTS funnel_metrics (
     step_name TEXT,
     users_entered COUNTER,
     users_completed COUNTER,
-    conversion_rate DECIMAL,
-    drop_off_rate DECIMAL,
+    users_dropped COUNTER,
     PRIMARY KEY ((website_id, funnel_id), metric_date, step_index)
 );
 
@@ -360,8 +350,8 @@ CREATE TABLE IF NOT EXISTS content_segment_metrics (
     segment_id UUID,
     metric_date TEXT,
     views COUNTER,
-    engagement_score DECIMAL,
-    conversion_rate DECIMAL,
+    total_engagement COUNTER, -- for calculating avg engagement score
+    conversion_count COUNTER,
     PRIMARY KEY ((website_id, content_id), segment_id, metric_date)
 );
 
@@ -393,16 +383,21 @@ CREATE TABLE IF NOT EXISTS triggered_events (
 );
 
 -- ====================================
--- INDEXES FOR OPTIMIZATION
+-- INDEXES FOR OPTIMIZATION (Fixed)
 -- ====================================
 
--- Additional secondary indexes for common queries
-CREATE INDEX IF NOT EXISTS events_visitor_idx ON events (visitor_id);
-CREATE INDEX IF NOT EXISTS events_session_idx ON events (session_id);
-CREATE INDEX IF NOT EXISTS events_page_url_idx ON events (page_url);
+-- Secondary indexes for common queries
+CREATE INDEX IF NOT EXISTS customers_email_idx ON customers (email);
+CREATE INDEX IF NOT EXISTS customers_status_idx ON customers (status);
 
-CREATE INDEX IF NOT EXISTS sessions_visitor_idx ON sessions (visitor_id);
-CREATE INDEX IF NOT EXISTS sessions_user_idx ON sessions (user_id);
+CREATE INDEX IF NOT EXISTS websites_customer_idx ON websites (customer_id);
+CREATE INDEX IF NOT EXISTS websites_domain_idx ON websites (domain);
+
+CREATE INDEX IF NOT EXISTS identified_users_website_idx ON identified_users (website_id);
+CREATE INDEX IF NOT EXISTS identified_users_external_idx ON identified_users (external_user_id);
+
+-- Note: Avoid creating too many secondary indexes on high-cardinality columns
+-- as they can impact write performance
 
 -- Show final schema
 DESCRIBE KEYSPACE user_behavior_analytics;

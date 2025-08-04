@@ -2,181 +2,89 @@
 // middlewares/apikey.js
 // Middleware kiểm tra API Key động từ database
 
-import { ApiKey } from "../models/ApiKey.js";
+// import { ApiKey } from "../models/ApiKey.js";
+import { Website } from "../models/Website.js";
 
 /**
  * Middleware kiểm tra API Key động
  */
-export const validateApiKey = (options = {}) => {
-  const {
-    required = true, // Bắt buộc API key hay không
-    allowPublicEndpoints = [], // Danh sách endpoints không cần API key
-    checkPermissions = true, // Kiểm tra quyền truy cập
-  } = options;
+export async function validateApiKey(req, res, next) {
+  try {
+    console.log("=== API Key Validation Start ===");
 
-  return async (req, res, next) => {
-    try {
-      // Kiểm tra xem endpoint có trong danh sách public không
-      const isPublicEndpoint = allowPublicEndpoints.some((endpoint) => {
-        if (typeof endpoint === "string") {
-          return req.path === endpoint;
-        }
-        if (endpoint instanceof RegExp) {
-          return endpoint.test(req.path);
-        }
-        return false;
-      });
+    // Lấy API key từ header
+    const apiKey = req.headers["x-api-key"];
 
-      // Nếu là public endpoint, bỏ qua kiểm tra
-      if (isPublicEndpoint) {
-        return next();
-      }
-
-      // Lấy API key từ header hoặc query parameter
-      const apiKey =
-        req.headers["x-api-key"] ||
-        req.headers["authorization"]?.replace("Bearer ", "") ||
-        req.query.api_key;
-
-      // console.log("Kiểm tra quyền truy cập: ", req.headers);
-      // Nếu không bắt buộc và không có API key, cho phép tiếp tục
-      if (!required && !apiKey) {
-        req.apiKeyValidated = false;
-        return next();
-      }
-
-      // Nếu bắt buộc nhưng không có API key
-      if (required && !apiKey) {
-        return res.status(401).json({
-          status: "error",
-          message: "API key is required",
-          error:
-            "Missing API key in request headers (x-api-key) or query parameter (api_key)",
-        });
-      }
-
-      // Xác thực API key từ database
-      const validation = await ApiKey.validate(apiKey);
-
-      if (!validation.valid) {
-        return res.status(401).json({
-          status: "error",
-          message: "Invalid API key",
-          error: validation.reason || "The provided API key is not valid",
-        });
-      }
-
-      const keyData = validation.key;
-
-      // Kiểm tra quyền truy cập nếu cần
-      if (checkPermissions) {
-        const hasPermission = checkEndpointPermission(req, keyData);
-        if (!hasPermission) {
-          return res.status(403).json({
-            status: "error",
-            message: "Insufficient permissions",
-            error: `API key does not have permission to access ${req.path}`,
-          });
-        }
-      }
-
-      // API key hợp lệ, thêm thông tin vào request
-      req.apiKeyValidated = true;
-      req.apiKey = apiKey;
-      req.apiKeyType = keyData.type;
-      req.apiKeyData = keyData;
-      req.websiteId = keyData.websiteId;
-
-      next();
-    } catch (error) {
-      console.error("API key validation error:", error);
-      res.status(500).json({
+    // Nếu bắt buộc nhưng không có API key
+    if (!apiKey) {
+      return res.status(401).json({
         status: "error",
-        message: "API key validation error",
-        error: error.message,
+        message: "API key is required",
+        error: "Missing API key in request headers (x-api-key)",
       });
     }
-  };
-};
 
-/**
- * Kiểm tra quyền truy cập endpoint
- */
-function checkEndpointPermission(req, keyData) {
-  const path = req.path;
-  const permissions = keyData.permissions || {};
+    if (
+      apiKey === process.env.DEMO_API_KEY ||
+      apiKey === process.env.TEST_API_KEY ||
+      apiKey === process.env.PRODUCTION_API_KEY
+    ) {
+      console.log("API key matched environment variable");
+      req.apiKeyValidated = true;
+      req.apiKeySource = "environment";
+      return next();
+    }
 
-  // Kiểm tra quyền tracking
-  if (path.includes("/tracking") && !permissions.tracking) {
-    return false;
+    console.log("Checking database...");
+    // Xác thực API key từ database
+    const websiteExists = await Website.existsByApiKey(apiKey);
+    console.log("Website exists in DB:", websiteExists);
+
+    if (!websiteExists) {
+      console.log("Invalid API key");
+      return res.status(401).json({
+        status: "error",
+        message: "Invalid API key",
+        error: "The provided API key is not valid or has been revoked",
+      });
+    }
+
+    // Lấy thông tin website tương ứng với API key
+    console.log("Fetching website details...");
+    const website = await Website.findByApiKey(apiKey);
+
+    if (!website) {
+      console.log("Website not found");
+      return res.status(401).json({
+        status: "error",
+        message: "Website not found",
+        error: "No website associated with this API key",
+      });
+    }
+
+    // Kiểm tra trạng thái website
+    console.log("Website status:", website.status);
+    if (website.status !== "active") {
+      console.log("Website not active");
+      return res.status(403).json({
+        status: "error",
+        message: "Website access suspended",
+        error: `Website status is ${website.status}`,
+      });
+    }
+
+    console.log("API key validation successful");
+    req.website = website;
+    req.apiKeyValidated = true;
+    req.apiKeySource = "database";
+    console.log("=== API Key Validation End ===");
+    next();
+  } catch (error) {
+    console.error("API key validation error:", error);
+    res.status(500).json({
+      status: "error",
+      message: "API key validation error",
+      error: error.message,
+    });
   }
-
-  // Kiểm tra quyền analytics
-  if (path.includes("/analytics") && !permissions.analytics) {
-    return false;
-  }
-
-  // Kiểm tra quyền user management
-  if (path.includes("/users") && !permissions.users) {
-    return false;
-  }
-
-  return true;
-}
-
-/**
- * Middleware chỉ cho phép API key hợp lệ (strict mode)
- */
-export const requireApiKey = validateApiKey({ required: true });
-
-/**
- * Middleware cho phép truy cập mà không cần API key (optional mode)
- */
-export const optionalApiKey = validateApiKey({ required: false });
-
-/**
- * Middleware yêu cầu quyền cụ thể
- */
-export const requirePermission = (permission) => {
-  return validateApiKey({
-    required: true,
-    checkPermissions: true,
-  });
-};
-
-/**
- * Lấy danh sách API keys hợp lệ (chỉ cho development)
- */
-export const getValidApiKeys = async () => {
-  if (process.env.NODE_ENV === "development") {
-    const dynamicKeys = ApiKey.getAll();
-    const envKeys = [
-      process.env.PRODUCTION_API_KEY,
-      process.env.DEMO_API_KEY,
-      process.env.TEST_API_KEY,
-    ]
-      .filter(Boolean)
-      .map((key) => ({
-        apiKey: ApiKey.maskApiKey(key),
-        type: getApiKeyType(key),
-        source: "environment",
-      }));
-
-    return {
-      dynamic: dynamicKeys,
-      environment: envKeys,
-      total: dynamicKeys.length + envKeys.length,
-    };
-  }
-  return { message: "API keys are hidden in production" };
-};
-
-/**
- * Xác định loại API key từ .env (legacy support)
- */
-function getApiKeyType(apiKey) {
-  if (apiKey === process.env.DEMO_API_KEY) return "demo";
-  if (apiKey === process.env.TEST_API_KEY) return "test";
-  if (apiKey === process.env.PRODUCTION_API_KEY) return "production";
-  return "unknown";
 }

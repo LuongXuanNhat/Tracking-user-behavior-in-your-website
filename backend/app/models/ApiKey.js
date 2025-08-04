@@ -2,46 +2,29 @@
 // Model để quản lý API keys với Cassandra integration
 
 import cassandraConnection from "../../config/database/init.js";
-import { v4 as uuidv4 } from "uuid";
+import process from "process";
+
+const KEYSPACE = process.env.CASSANDRA_KEYSPACE || "user_behavior_analytics";
 
 export class ApiKey {
   constructor(data = {}) {
-    this.id = data.id || uuidv4();
     this.api_key = data.api_key;
     this.website_id = data.website_id;
-    this.website_name = data.website_name;
-    this.website_url = data.website_url;
-    this.type = data.type || "production";
-    this.description = data.description || "";
-    this.owner = data.owner || "admin";
-    this.status = data.status || "active";
+    this.customer_id = data.customer_id;
+    this.name = data.name || "";
+    this.permissions = data.permissions || new Set(["read"]); // SET<TEXT> in Cassandra
+    this.rate_limit = data.rate_limit || 1000;
+    this.status = data.status || "active"; // active, revoked, expired
     this.created_at = data.created_at || new Date();
-    this.updated_at = data.updated_at || new Date();
+    this.expires_at = data.expires_at || null;
     this.last_used = data.last_used || null;
     this.usage_count = data.usage_count || 0;
-    this.expires_at = data.expires_at || null;
 
-    // Initialize permissions properly
-    const defaultPermissions = {
-      tracking: "true",
-      analytics: "true",
-      users: this.type !== "demo" ? "true" : "false",
-      rate_limit: "1000",
-    };
-
-    if (data.permissions) {
-      if (data.permissions instanceof Map) {
-        this.permissions = Object.fromEntries(data.permissions);
-      } else if (
-        typeof data.permissions === "object" &&
-        !Array.isArray(data.permissions)
-      ) {
-        this.permissions = { ...defaultPermissions, ...data.permissions };
-      } else {
-        this.permissions = defaultPermissions;
-      }
-    } else {
-      this.permissions = defaultPermissions;
+    // Convert permissions to Set if it's an array
+    if (Array.isArray(this.permissions)) {
+      this.permissions = new Set(this.permissions);
+    } else if (!(this.permissions instanceof Set)) {
+      this.permissions = new Set(["read"]);
     }
   }
 
@@ -52,32 +35,24 @@ export class ApiKey {
     try {
       const client = cassandraConnection.getClient();
       const query = `
-        INSERT INTO user_logs.api_keys (
-          id, api_key, website_id, website_name, website_url, type,
-          description, owner, status, permissions, created_at, updated_at,
-          last_used, usage_count, expires_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ${KEYSPACE}.api_keys (
+          api_key, website_id, customer_id, name, permissions, rate_limit,
+          status, created_at, expires_at, last_used, usage_count
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
-      // Convert permissions object to Map for Cassandra
-      const permissionsMap = new Map(Object.entries(this.permissions));
-
       const params = [
-        this.id,
         this.api_key,
         this.website_id,
-        this.website_name,
-        this.website_url,
-        this.type,
-        this.description,
-        this.owner,
+        this.customer_id,
+        this.name,
+        this.permissions, // Set will be handled by Cassandra driver
+        this.rate_limit,
         this.status,
-        permissionsMap,
         this.created_at,
-        this.updated_at,
+        this.expires_at,
         this.last_used,
         this.usage_count,
-        this.expires_at,
       ];
 
       await client.execute(query, params, { prepare: true });
@@ -94,8 +69,7 @@ export class ApiKey {
   static async findByApiKey(apiKey) {
     try {
       const client = cassandraConnection.getClient();
-      const query =
-        "SELECT * FROM user_logs.api_keys WHERE api_key = ? ALLOW FILTERING";
+      const query = `SELECT * FROM ${KEYSPACE}.websites WHERE api_key = ?`;
       const result = await client.execute(query, [apiKey], { prepare: true });
 
       if (result.rows.length === 0) return null;
@@ -112,8 +86,7 @@ export class ApiKey {
   static async findByWebsiteId(websiteId) {
     try {
       const client = cassandraConnection.getClient();
-      const query =
-        "SELECT * FROM user_logs.api_keys WHERE website_id = ? ALLOW FILTERING";
+      const query = `SELECT * FROM ${KEYSPACE}.api_keys WHERE website_id = ? ALLOW FILTERING`;
       const result = await client.execute(query, [websiteId], {
         prepare: true,
       });
@@ -121,23 +94,6 @@ export class ApiKey {
       return result.rows.map((row) => new ApiKey(row));
     } catch (error) {
       console.error("Error finding API keys by website id:", error);
-      throw error;
-    }
-  }
-
-  /**
-   * Tìm API key theo ID
-   */
-  static async findById(id) {
-    try {
-      const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM user_logs.api_keys WHERE id = ?";
-      const result = await client.execute(query, [id], { prepare: true });
-
-      if (result.rows.length === 0) return null;
-      return new ApiKey(result.rows[0]);
-    } catch (error) {
-      console.error("Error finding API key by id:", error);
       throw error;
     }
   }
@@ -151,10 +107,10 @@ export class ApiKey {
       const fields = [];
       const values = [];
 
-      if (updateData.description !== undefined) {
-        this.description = updateData.description;
-        fields.push("description = ?");
-        values.push(this.description);
+      if (updateData.name !== undefined) {
+        this.name = updateData.name;
+        fields.push("name = ?");
+        values.push(this.name);
       }
       if (updateData.status !== undefined) {
         this.status = updateData.status;
@@ -162,9 +118,14 @@ export class ApiKey {
         values.push(this.status);
       }
       if (updateData.permissions !== undefined) {
-        this.permissions = { ...this.permissions, ...updateData.permissions };
+        this.permissions = new Set(updateData.permissions);
         fields.push("permissions = ?");
-        values.push(new Map(Object.entries(this.permissions)));
+        values.push(this.permissions);
+      }
+      if (updateData.rate_limit !== undefined) {
+        this.rate_limit = updateData.rate_limit;
+        fields.push("rate_limit = ?");
+        values.push(this.rate_limit);
       }
       if (updateData.expires_at !== undefined) {
         this.expires_at = updateData.expires_at;
@@ -172,14 +133,11 @@ export class ApiKey {
         values.push(this.expires_at);
       }
 
-      this.updated_at = new Date();
-      fields.push("updated_at = ?");
-      values.push(this.updated_at);
-      values.push(this.id);
+      values.push(this.api_key);
 
-      const query = `UPDATE user_logs.api_keys SET ${fields.join(
+      const query = `UPDATE ${KEYSPACE}.api_keys SET ${fields.join(
         ", "
-      )} WHERE id = ?`;
+      )} WHERE api_key = ?`;
       await client.execute(query, values, { prepare: true });
 
       return this;
@@ -195,8 +153,8 @@ export class ApiKey {
   async delete() {
     try {
       const client = cassandraConnection.getClient();
-      const query = "DELETE FROM user_logs.api_keys WHERE id = ?";
-      await client.execute(query, [this.id], { prepare: true });
+      const query = `DELETE FROM ${KEYSPACE}.api_keys WHERE api_key = ?`;
+      await client.execute(query, [this.api_key], { prepare: true });
       return true;
     } catch (error) {
       console.error("Error deleting API key:", error);
@@ -205,22 +163,30 @@ export class ApiKey {
   }
 
   /**
-   * Cập nhật lần sử dụng cuối
+   * Cập nhật lần sử dụng cuối (sử dụng COUNTER)
    */
   async updateLastUsed() {
     try {
       const client = cassandraConnection.getClient();
       const now = new Date();
 
-      const query = `
-        UPDATE user_logs.api_keys 
-        SET last_used = ?, usage_count = usage_count + 1, updated_at = ?
-        WHERE id = ?
-      `;
+      // Update last_used and increment usage_count counter
+      const updateQueries = [
+        {
+          query: `UPDATE ${KEYSPACE}.api_keys SET last_used = ? WHERE api_key = ?`,
+          params: [now, this.api_key],
+        },
+        {
+          query: `UPDATE ${KEYSPACE}.api_keys SET usage_count = usage_count + 1 WHERE api_key = ?`,
+          params: [this.api_key],
+        },
+      ];
 
-      await client.execute(query, [now, now, this.id], { prepare: true });
+      for (const q of updateQueries) {
+        await client.execute(q.query, q.params, { prepare: true });
+      }
+
       this.last_used = now;
-      this.updated_at = now;
       this.usage_count += 1;
 
       return this;
@@ -272,7 +238,7 @@ export class ApiKey {
   static async findAll(limit = 100) {
     try {
       const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM user_logs.api_keys LIMIT ?";
+      const query = `SELECT * FROM ${KEYSPACE}.api_keys LIMIT ?`;
       const result = await client.execute(query, [limit], { prepare: true });
 
       return result.rows.map((row) => new ApiKey(row));
@@ -282,46 +248,19 @@ export class ApiKey {
     }
   }
 
-  /**
-   * Thống kê API keys
-   */
-  static async getStats() {
-    try {
-      const apiKeys = await this.findAll();
-      const total = apiKeys.length;
-      const active = apiKeys.filter((k) => k.status === "active").length;
-      const expired = apiKeys.filter(
-        (k) => k.expires_at && new Date() > k.expires_at
-      ).length;
-      const byType = apiKeys.reduce((acc, key) => {
-        acc[key.type] = (acc[key.type] || 0) + 1;
-        return acc;
-      }, {});
-
-      return { total, active, expired, byType };
-    } catch (error) {
-      console.error("Error getting API key stats:", error);
-      throw error;
-    }
-  }
-
   toJSON() {
     return {
-      id: this.id,
       api_key: this.api_key,
       website_id: this.website_id,
-      website_name: this.website_name,
-      website_url: this.website_url,
-      type: this.type,
-      description: this.description,
-      owner: this.owner,
+      customer_id: this.customer_id,
+      name: this.name,
+      permissions: Array.from(this.permissions),
+      rate_limit: this.rate_limit,
       status: this.status,
-      permissions: this.permissions,
       created_at: this.created_at,
-      updated_at: this.updated_at,
+      expires_at: this.expires_at,
       last_used: this.last_used,
       usage_count: this.usage_count,
-      expires_at: this.expires_at,
     };
   }
 }

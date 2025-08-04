@@ -16,30 +16,8 @@ import { v4 as uuidv4 } from "uuid";
  */
 export async function collectEvent(req, res) {
   try {
-    const apiKeyHeader =
-      req.headers["x-api-key"] ||
-      req.headers["authorization"]?.replace("Bearer ", "");
-
-    if (!apiKeyHeader) {
-      return res.status(401).json({
-        success: false,
-        message: "API key là bắt buộc",
-      });
-    }
-
-    // Xác thực API key
-    const validation = await ApiKey.validateApiKey(apiKeyHeader);
-    if (!validation.valid) {
-      return res.status(401).json({
-        success: false,
-        message: validation.reason,
-      });
-    }
-
-    const apiKey = validation.apiKey;
-
-    // Lấy thông tin website
-    const website = await Website.findById(apiKey.website_id);
+    // Lấy thông tin website từ req.website (đã được add từ authen)
+    const website = req.website;
     if (!website) {
       return res.status(404).json({
         success: false,
@@ -49,61 +27,108 @@ export async function collectEvent(req, res) {
 
     const {
       event_type,
-      element_type,
+      event_name,
       page_url,
-      element_id,
-      metadata = {},
-      user_agent,
+      page_title,
+      element_selector,
+      element_text,
+      visitor_id,
       session_id,
+      user_id, // có thể null cho anonymous users
+      device_type,
+      browser,
+      os,
+      country,
+      city,
+      referrer,
+      utm_source,
+      utm_medium,
+      utm_campaign,
+      duration_since_start,
+      properties = {},
     } = req.body;
 
-    // Validation
-    if (!event_type || !page_url) {
+    // Validation - theo Event model requirements
+    if (!event_type) {
       return res.status(400).json({
         success: false,
-        message: "event_type và page_url là bắt buộc",
+        message: "event_type là bắt buộc",
       });
     }
 
-    // Tạo user_id nếu chưa có (dựa trên session hoặc tạo mới)
-    let user_id = req.body.user_id;
-    if (!user_id) {
-      user_id = uuidv4(); // Tạo user_id mới cho anonymous user
+    if (!page_url) {
+      return res.status(400).json({
+        success: false,
+        message: "page_url là bắt buộc",
+      });
     }
+
+    // if (!visitor_id) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "visitor_id là bắt buộc",
+    //   });
+    // }
+
+    // if (!session_id) {
+    //   return res.status(400).json({
+    //     success: false,
+    //     message: "session_id là bắt buộc",
+    //   });
+    // }
 
     // Lấy IP address
     const ip_address =
       req.ip || req.connection.remoteAddress || req.headers["x-forwarded-for"];
 
-    // Tạo event mới
-    const event = new Event({
-      user_id,
-      event_type,
-      element_type,
-      page_url,
-      element_id,
-      metadata: {
-        ...metadata,
-        website_id: website.id,
-        api_key: apiKeyHeader,
-      },
-      ip_address,
-      user_agent: user_agent || req.headers["user-agent"],
-      session_id: session_id || uuidv4(),
-    });
+    // Tạo event data theo đúng schema của Event model
+    const eventData = {
+      website_id: website.website_id, // Sử dụng website.website_id từ req.website
+      visitor_id: visitor_id || uuidv4(), // Required field - đã validate
+      user_id: user_id || null, // null cho anonymous users
+      session_id: session_id, // Required field - đã validate
+      event_type: event_type, // Required field - đã validate
+      event_name: event_name || event_type,
+      page_url: page_url, // Required field - đã validate
+      page_title: page_title,
+      element_selector: element_selector,
+      element_text: element_text,
+      device_type: device_type,
+      browser: browser,
+      os: os,
+      ip_address: ip_address,
+      country: country,
+      city: city,
+      referrer: referrer,
+      utm_source: utm_source,
+      utm_medium: utm_medium,
+      utm_campaign: utm_campaign,
+      duration_since_start: duration_since_start,
+      properties: properties,
+    };
 
+    // Tạo event mới bằng createSafe để có validation
+    const event = Event.createSafe(eventData);
+
+    // Lưu event vào database
     await event.create();
 
-    // Cập nhật hoạt động cuối của website
-    await website.updateLastActivity();
+    // Cập nhật hoạt động cuối của website nếu có method này
+    // if (website.updateLastActivity) {
+    //   await website.updateLastActivity();
+    // }
 
     res.status(201).json({
       success: true,
       message: "Event đã được ghi nhận",
       data: {
-        event_id: event.id,
+        event_id: event.event_id,
+        website_id: event.website_id,
+        visitor_id: event.visitor_id,
         user_id: event.user_id,
-        timestamp: event.timestamp,
+        session_id: event.session_id,
+        event_type: event.event_type,
+        event_time: event.event_time,
       },
     });
   } catch (error) {
@@ -122,30 +147,8 @@ export async function collectEvent(req, res) {
  */
 export async function collectBatchEvents(req, res) {
   try {
-    const apiKeyHeader =
-      req.headers["x-api-key"] ||
-      req.headers["authorization"]?.replace("Bearer ", "");
-
-    if (!apiKeyHeader) {
-      return res.status(401).json({
-        success: false,
-        message: "API key là bắt buộc",
-      });
-    }
-
-    // Xác thực API key
-    const validation = await ApiKey.validateApiKey(apiKeyHeader);
-    if (!validation.valid) {
-      return res.status(401).json({
-        success: false,
-        message: validation.reason,
-      });
-    }
-
-    const apiKey = validation.apiKey;
-
-    // Lấy thông tin website
-    const website = await Website.findById(apiKey.website_id);
+    // Lấy thông tin website từ req.website (đã được add từ authen)
+    const website = req.website;
     if (!website) {
       return res.status(404).json({
         success: false,
@@ -162,60 +165,98 @@ export async function collectBatchEvents(req, res) {
       });
     }
 
-    // Validate và tạo events
-    const createdEvents = [];
+    // Lấy IP address
     const ip_address =
       req.ip || req.connection.remoteAddress || req.headers["x-forwarded-for"];
 
-    for (const eventData of events) {
+    // Validate và tạo events
+    const createdEvents = [];
+    const failedEvents = [];
+
+    for (let i = 0; i < events.length; i++) {
+      const eventData = events[i];
+
       const {
         event_type,
-        element_type,
+        event_name,
         page_url,
-        element_id,
-        metadata = {},
-        user_agent,
+        page_title,
+        element_selector,
+        element_text,
+        visitor_id,
         session_id,
+        user_id, // có thể null cho anonymous users
+        device_type,
+        browser,
+        os,
+        country,
+        city,
+        referrer,
+        utm_source,
+        utm_medium,
+        utm_campaign,
+        duration_since_start,
+        properties = {},
       } = eventData;
 
-      // Validation
-      if (!event_type || !page_url) {
-        continue; // Skip invalid events
+      // Validation - theo Event model requirements
+      if (!event_type) {
+        failedEvents.push({ index: i, reason: "event_type là bắt buộc" });
+        continue;
       }
 
-      // Tạo user_id nếu chưa có
-      let user_id = eventData.user_id;
-      if (!user_id) {
-        user_id = uuidv4();
+      if (!page_url) {
+        failedEvents.push({ index: i, reason: "page_url là bắt buộc" });
+        continue;
       }
 
-      const event = new Event({
-        user_id,
-        event_type,
-        element_type,
-        page_url,
-        element_id,
-        metadata: {
-          ...metadata,
-          website_id: website.id,
-          api_key: apiKeyHeader,
-        },
-        ip_address,
-        user_agent: user_agent || req.headers["user-agent"],
-        session_id: session_id || uuidv4(),
-      });
+      // Tạo event data theo đúng schema của Event model
+      const eventPayload = {
+        website_id: website.website_id, // Sử dụng website.website_id từ req.website
+        visitor_id: visitor_id || uuidv4(), // Required field
+        user_id: user_id || null, // null cho anonymous users
+        session_id: session_id || uuidv4(), // Required field
+        event_type: event_type, // Required field
+        event_name: event_name || event_type,
+        page_url: page_url, // Required field
+        page_title: page_title,
+        element_selector: element_selector,
+        element_text: element_text,
+        device_type: device_type,
+        browser: browser,
+        os: os,
+        ip_address: ip_address,
+        country: country,
+        city: city,
+        referrer: referrer,
+        utm_source: utm_source,
+        utm_medium: utm_medium,
+        utm_campaign: utm_campaign,
+        duration_since_start: duration_since_start,
+        properties: properties,
+      };
 
       try {
+        // Tạo event mới bằng createSafe để có validation
+        const event = Event.createSafe(eventPayload);
+
+        // Lưu event vào database
         await event.create();
-        createdEvents.push(event.id);
+
+        createdEvents.push({
+          event_id: event.event_id,
+          website_id: event.website_id,
+          visitor_id: event.visitor_id,
+          user_id: event.user_id,
+          session_id: event.session_id,
+          event_type: event.event_type,
+          event_time: event.event_time,
+        });
       } catch (error) {
         console.error("Error creating batch event:", error);
-        // Continue với events khác
+        failedEvents.push({ index: i, reason: error.message });
       }
     }
-
-    // Cập nhật hoạt động cuối của website
-    await website.updateLastActivity();
 
     res.status(201).json({
       success: true,
@@ -223,7 +264,9 @@ export async function collectBatchEvents(req, res) {
       data: {
         created_count: createdEvents.length,
         total_count: events.length,
-        event_ids: createdEvents,
+        failed_count: failedEvents.length,
+        created_events: createdEvents,
+        failed_events: failedEvents.length > 0 ? failedEvents : undefined,
       },
     });
   } catch (error) {

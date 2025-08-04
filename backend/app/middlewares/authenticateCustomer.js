@@ -26,7 +26,7 @@ export async function authenticateCustomer(req, res, next) {
       token,
       process.env.JWT_SECRET || "default_secret"
     );
-
+    // console.log("Decoded token:", decoded);
     // Lấy thông tin customer
     const customer = await Customer.findById(decoded.customerId);
     if (!customer) {
@@ -45,10 +45,10 @@ export async function authenticateCustomer(req, res, next) {
 
     // Attach customer info to request
     req.customer = {
-      customerId: customer.id,
+      customerId: customer.customer_id,
       email: customer.email,
       name: customer.name,
-      subscription_plan: customer.subscription_plan,
+      plan: customer.plan,
     };
 
     next();
@@ -88,7 +88,7 @@ export function requireSubscriptionPlan(requiredPlan) {
   };
 
   return (req, res, next) => {
-    const customerPlan = req.customer.subscription_plan;
+    const customerPlan = req.customer.plan;
     const customerLevel = planLevels[customerPlan] || 0;
     const requiredLevel = planLevels[requiredPlan] || 0;
 

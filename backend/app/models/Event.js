@@ -1,38 +1,136 @@
 // models/Event.js
 // Model để quản lý user events với Cassandra integration
+// Tái cấu trúc theo schema database_v2.cql
 
 import cassandraConnection from "../../config/database/init.js";
 import { v4 as uuidv4 } from "uuid";
+import process from "process";
+
+const KEYSPACE = process.env.CASSANDRA_KEYSPACE || "user_behavior_analytics";
 
 export class Event {
   constructor(data = {}) {
-    this.id = data.id || uuidv4();
-    this.user_id = data.user_id;
-    this.created_date = data.created_date || this.formatDate(new Date());
-    this.timestamp = data.timestamp || new Date();
-    this.event_type = data.event_type;
-    this.element_type = data.element_type;
-    this.page_url = data.page_url;
-    this.element_id = data.element_id;
-    this.ip_address = data.ip_address;
-    this.user_agent = data.user_agent;
-    this.session_id = data.session_id;
+    // Core identifiers
+    this.event_id = data.event_id || uuidv4();
+    this.website_id = this.validateUUID(data.website_id, "website_id");
+    this.visitor_id = this.validateUUID(data.visitor_id, "visitor_id");
+    this.user_id = data.user_id
+      ? this.validateUUID(data.user_id, "user_id")
+      : null; // null for anonymous users
+    this.session_id = this.validateUUID(data.session_id, "session_id");
 
-    // Initialize metadata properly
-    if (data.metadata) {
-      if (data.metadata instanceof Map) {
-        this.metadata = Object.fromEntries(data.metadata);
+    // Time tracking
+    this.event_date = data.event_date || this.formatDate(new Date()); // YYYY-MM-DD
+    this.event_time = data.event_time || new Date();
+
+    // Event details
+    this.event_type = data.event_type; // pageview, click, scroll, form_submit, purchase, etc.
+    this.event_name = data.event_name; // specific event name
+
+    // Page information
+    this.page_url = data.page_url;
+    this.page_title = data.page_title;
+
+    // Element information
+    this.element_selector = data.element_selector;
+    this.element_text = data.element_text;
+
+    // Device and browser information
+    this.device_type = data.device_type; // desktop, mobile, tablet
+    this.browser = data.browser;
+    this.os = data.os;
+
+    // Location and tracking
+    this.ip_address = data.ip_address;
+    this.country = data.country;
+    this.city = data.city;
+    this.referrer = data.referrer;
+
+    // UTM parameters
+    this.utm_source = data.utm_source;
+    this.utm_medium = data.utm_medium;
+    this.utm_campaign = data.utm_campaign;
+
+    // Session context for events_by_session table
+    this.duration_since_start = data.duration_since_start; // milliseconds since session start
+
+    // Initialize properties properly
+    if (data.properties) {
+      if (data.properties instanceof Map) {
+        this.properties = Object.fromEntries(data.properties);
       } else if (
-        typeof data.metadata === "object" &&
-        !Array.isArray(data.metadata)
+        typeof data.properties === "object" &&
+        !Array.isArray(data.properties)
       ) {
-        this.metadata = data.metadata;
+        this.properties = data.properties;
       } else {
-        this.metadata = {};
+        this.properties = {};
       }
     } else {
-      this.metadata = {};
+      this.properties = {};
     }
+  }
+
+  /**
+   * Validate required fields before saving
+   */
+  validateRequiredFields() {
+    const requiredFields = {
+      website_id: this.website_id,
+      visitor_id: this.visitor_id,
+      session_id: this.session_id,
+      event_type: this.event_type,
+      event_date: this.event_date,
+      event_time: this.event_time,
+    };
+
+    for (const [field, value] of Object.entries(requiredFields)) {
+      if (!value) {
+        throw new Error(
+          `Required field ${field} is missing or invalid: ${value}`
+        );
+      }
+    }
+
+    // Additional UUID validation
+    const uuidFields = ["website_id", "visitor_id", "session_id"];
+    if (this.user_id) {
+      uuidFields.push("user_id");
+    }
+
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    for (const field of uuidFields) {
+      const value = this[field];
+      if (value && !uuidRegex.test(value)) {
+        throw new Error(`Invalid UUID format for ${field}: ${value}`);
+      }
+    }
+  }
+
+  /**
+   * Validate UUID format
+   */
+  validateUUID(uuid, fieldName) {
+    if (!uuid) {
+      throw new Error(
+        `${fieldName} is required and cannot be null or undefined`
+      );
+    }
+    const uuidStr = uuid.toString?.();
+    // Check if it's already a valid UUID format
+    const uuidRegex =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+    if (typeof uuidStr === "string" && uuidRegex.test(uuidStr)) {
+      return uuidStr;
+    }
+
+    console.warn(
+      `Invalid UUID format for ${fieldName}: ${uuid}, generating new UUID`
+    );
+    return uuidv4();
   }
 
   /**
@@ -43,77 +141,177 @@ export class Event {
   }
 
   /**
-   * Tạo event mới - lưu vào cả 2 bảng để optimize queries
+   * Tạo event mới - lưu vào multiple tables để optimize queries theo schema mới
    */
   async create() {
     try {
       const client = cassandraConnection.getClient();
 
-      // Lưu vào user_events table (partitioned by user_id)
-      const userEventsQuery = `
-        INSERT INTO user_logs.user_events (
-          user_id, created_date, timestamp, id, event_type, element_type,
-          page_url, element_id, metadata, ip_address, user_agent, session_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      // Validate required fields before saving
+      this.validateRequiredFields();
+
+      // Convert properties to Map for Cassandra
+      const propertiesMap = new Map(Object.entries(this.properties));
+
+      // 1. Lưu vào events table (partitioned by website_id and event_date)
+      const eventsQuery = `
+        INSERT INTO ${KEYSPACE}.events (
+          website_id, event_date, event_time, event_id, visitor_id, user_id,
+          session_id, event_type, event_name, page_url, page_title,
+          element_selector, element_text, properties, device_type, browser, os,
+          ip_address, country, city, referrer, utm_source, utm_medium, utm_campaign
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
-      // Lưu vào events_by_date table (partitioned by date)
-      const eventsByDateQuery = `
-        INSERT INTO user_logs.events_by_date (
-          created_date, timestamp, id, user_id, event_type, element_type,
-          page_url, element_id, metadata, ip_address, user_agent, session_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      // 2. Lưu vào events_by_user table (partitioned by website_id and visitor_id)
+      const eventsByUserQuery = `
+        INSERT INTO ${KEYSPACE}.events_by_user (
+          website_id, visitor_id, event_time, event_id, session_id,
+          event_type, event_name, page_url, properties
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
-      const metadataMap = new Map(Object.entries(this.metadata));
+      // 3. Lưu vào events_by_session table (partitioned by website_id and session_id)
+      const eventsBySessionQuery = `
+        INSERT INTO ${KEYSPACE}.events_by_session (
+          website_id, session_id, event_time, event_id, visitor_id,
+          event_type, event_name, page_url, duration_since_start, properties
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
 
-      const params = [
+      // 4. Lưu vào events_by_type table (partitioned by website_id and event_type)
+      const eventsByTypeQuery = `
+        INSERT INTO ${KEYSPACE}.events_by_type (
+          website_id, event_type, event_date, event_time, event_id,
+          visitor_id, session_id, page_url, properties
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      const eventsParams = [
+        this.website_id,
+        this.event_date,
+        this.event_time,
+        this.event_id,
+        this.visitor_id,
         this.user_id,
-        this.created_date,
-        this.timestamp,
-        this.id,
-        this.event_type,
-        this.element_type,
-        this.page_url,
-        this.element_id,
-        metadataMap,
-        this.ip_address,
-        this.user_agent,
         this.session_id,
+        this.event_type,
+        this.event_name,
+        this.page_url,
+        this.page_title,
+        this.element_selector,
+        this.element_text,
+        propertiesMap,
+        this.device_type,
+        this.browser,
+        this.os,
+        this.ip_address,
+        this.country,
+        this.city,
+        this.referrer,
+        this.utm_source,
+        this.utm_medium,
+        this.utm_campaign,
       ];
 
-      const paramsForDate = [
-        this.created_date,
-        this.timestamp,
-        this.id,
-        this.user_id,
-        this.event_type,
-        this.element_type,
-        this.page_url,
-        this.element_id,
-        metadataMap,
-        this.ip_address,
-        this.user_agent,
+      const eventsByUserParams = [
+        this.website_id,
+        this.visitor_id,
+        this.event_time,
+        this.event_id,
         this.session_id,
+        this.event_type,
+        this.event_name,
+        this.page_url,
+        propertiesMap,
       ];
 
-      // Execute both queries in parallel
+      const eventsBySessionParams = [
+        this.website_id,
+        this.session_id,
+        this.event_time,
+        this.event_id,
+        this.visitor_id,
+        this.event_type,
+        this.event_name,
+        this.page_url,
+        this.duration_since_start,
+        propertiesMap,
+      ];
+
+      const eventsByTypeParams = [
+        this.website_id,
+        this.event_type,
+        this.event_date,
+        this.event_time,
+        this.event_id,
+        this.visitor_id,
+        this.session_id,
+        this.page_url,
+        propertiesMap,
+      ];
+
+      // Execute all queries in parallel
       await Promise.all([
-        client.execute(userEventsQuery, params, { prepare: true }),
-        client.execute(eventsByDateQuery, paramsForDate, { prepare: true }),
+        client.execute(eventsQuery, eventsParams, { prepare: true }),
+        client.execute(eventsByUserQuery, eventsByUserParams, {
+          prepare: true,
+        }),
+        client.execute(eventsBySessionQuery, eventsBySessionParams, {
+          prepare: true,
+        }),
+        client.execute(eventsByTypeQuery, eventsByTypeParams, {
+          prepare: true,
+        }),
       ]);
 
       return this;
     } catch (error) {
       console.error("Failed to save event to Cassandra:", error);
+      console.error("Event data:", {
+        event_id: this.event_id,
+        website_id: this.website_id,
+        visitor_id: this.visitor_id,
+        user_id: this.user_id,
+        session_id: this.session_id,
+        event_type: this.event_type,
+        event_name: this.event_name,
+      });
       throw new Error(`Failed to save event: ${error.message}`);
     }
   }
 
   /**
-   * Tìm events theo user ID trong khoảng thời gian
+   * Static method để tạo Event an toàn với validation
    */
-  static async findByUserId(userId, startDate, endDate = null, limit = 100) {
+  static createSafe(data = {}) {
+    try {
+      // Ensure required UUIDs are provided or generated
+      const safeData = {
+        ...data,
+        website_id: data.website_id || uuidv4(),
+        visitor_id: data.visitor_id || uuidv4(),
+        session_id: data.session_id || uuidv4(),
+        event_type: data.event_type || "pageview",
+        event_name: data.event_name || data.event_type || "pageview",
+      };
+
+      return new Event(safeData);
+    } catch (error) {
+      console.error("Error creating safe Event:", error);
+      throw new Error(`Failed to create Event: ${error.message}`);
+    }
+  }
+
+  /**
+   * Tìm events theo website và date range từ bảng events chính
+   */
+  static async findByWebsiteAndDate(
+    websiteId,
+    startDate,
+    endDate = null,
+    limit = 100
+  ) {
     try {
       const client = cassandraConnection.getClient();
 
@@ -124,22 +322,22 @@ export class Event {
       if (startDate === endDate) {
         // Single day query
         query = `
-          SELECT * FROM user_logs.user_events 
-          WHERE user_id = ? AND created_date = ?
-          ORDER BY timestamp DESC
+          SELECT * FROM ${KEYSPACE}.events 
+          WHERE website_id = ? AND event_date = ?
+          ORDER BY event_time DESC
           LIMIT ?
         `;
-        params = [userId, startDate, limit];
+        params = [websiteId, startDate, limit];
       } else {
         // Multiple days - need to query each day separately
         const dates = this.generateDateRange(startDate, endDate);
         const queries = dates.map((date) => ({
           query: `
-            SELECT * FROM user_logs.user_events 
-            WHERE user_id = ? AND created_date = ?
-            ORDER BY timestamp DESC
+            SELECT * FROM ${KEYSPACE}.events 
+            WHERE website_id = ? AND event_date = ?
+            ORDER BY event_time DESC
           `,
-          params: [userId, date],
+          params: [websiteId, date],
         }));
 
         const results = await Promise.all(
@@ -149,7 +347,7 @@ export class Event {
         );
 
         const allRows = results.flatMap((result) => result.rows);
-        allRows.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        allRows.sort((a, b) => new Date(b.event_time) - new Date(a.event_time));
 
         return allRows.slice(0, limit).map((row) => new Event(row));
       }
@@ -157,108 +355,72 @@ export class Event {
       const result = await client.execute(query, params, { prepare: true });
       return result.rows.map((row) => new Event(row));
     } catch (error) {
-      console.error("Error finding events by user id:", error);
+      console.error("Error finding events by website and date:", error);
       throw error;
     }
   }
 
   /**
-   * Tìm events theo date range
+   * Tìm events theo visitor ID (user journey analysis)
    */
-  static async findByDateRange(startDate, endDate = null, limit = 100) {
+  static async findByVisitor(websiteId, visitorId, limit = 100) {
     try {
       const client = cassandraConnection.getClient();
 
-      if (!endDate) endDate = startDate;
+      const query = `
+        SELECT * FROM ${KEYSPACE}.events_by_user 
+        WHERE website_id = ? AND visitor_id = ?
+        ORDER BY event_time DESC
+        LIMIT ?
+      `;
 
-      if (startDate === endDate) {
-        // Single day query
-        const query = `
-          SELECT * FROM user_logs.events_by_date 
-          WHERE created_date = ?
-          ORDER BY timestamp DESC
-          LIMIT ?
-        `;
-        const result = await client.execute(query, [startDate, limit], {
+      const result = await client.execute(
+        query,
+        [websiteId, visitorId, limit],
+        {
           prepare: true,
-        });
-        return result.rows.map((row) => new Event(row));
-      } else {
-        // Multiple days
-        const dates = this.generateDateRange(startDate, endDate);
-        const queries = dates.map((date) => ({
-          query: `
-            SELECT * FROM user_logs.events_by_date 
-            WHERE created_date = ?
-            ORDER BY timestamp DESC
-          `,
-          params: [date],
-        }));
-
-        const results = await Promise.all(
-          queries.map((q) =>
-            client.execute(q.query, q.params, { prepare: true })
-          )
-        );
-
-        const allRows = results.flatMap((result) => result.rows);
-        allRows.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-        return allRows.slice(0, limit).map((row) => new Event(row));
-      }
+        }
+      );
+      return result.rows.map((row) => new Event(row));
     } catch (error) {
-      console.error("Error finding events by date range:", error);
+      console.error("Error finding events by visitor:", error);
       throw error;
     }
   }
 
   /**
-   * Tìm events theo session ID
+   * Tìm events theo session ID (session analysis)
    */
-  static async findBySessionId(
-    sessionId,
-    startDate,
-    endDate = null,
-    limit = 100
-  ) {
+  static async findBySession(websiteId, sessionId, limit = 100) {
     try {
       const client = cassandraConnection.getClient();
 
-      if (!endDate) endDate = startDate;
+      const query = `
+        SELECT * FROM ${KEYSPACE}.events_by_session 
+        WHERE website_id = ? AND session_id = ?
+        ORDER BY event_time ASC
+        LIMIT ?
+      `;
 
-      const dates =
-        startDate === endDate
-          ? [startDate]
-          : this.generateDateRange(startDate, endDate);
-
-      const queries = dates.map((date) => ({
-        query: `
-          SELECT * FROM user_logs.events_by_date 
-          WHERE created_date = ? AND session_id = ?
-          ORDER BY timestamp DESC
-          ALLOW FILTERING
-        `,
-        params: [date, sessionId],
-      }));
-
-      const results = await Promise.all(
-        queries.map((q) => client.execute(q.query, q.params, { prepare: true }))
+      const result = await client.execute(
+        query,
+        [websiteId, sessionId, limit],
+        {
+          prepare: true,
+        }
       );
-
-      const allRows = results.flatMap((result) => result.rows);
-      allRows.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-      return allRows.slice(0, limit).map((row) => new Event(row));
+      return result.rows.map((row) => new Event(row));
     } catch (error) {
-      console.error("Error finding events by session id:", error);
+      console.error("Error finding events by session:", error);
       throw error;
     }
   }
 
   /**
-   * Tìm events theo event type
+   * Tìm events theo event type (event-specific analytics)
    */
   static async findByEventType(
+    websiteId,
     eventType,
     startDate,
     endDate = null,
@@ -269,29 +431,45 @@ export class Event {
 
       if (!endDate) endDate = startDate;
 
-      const dates =
-        startDate === endDate
-          ? [startDate]
-          : this.generateDateRange(startDate, endDate);
+      if (startDate === endDate) {
+        // Single day query
+        const query = `
+          SELECT * FROM ${KEYSPACE}.events_by_type 
+          WHERE website_id = ? AND event_type = ? AND event_date = ?
+          ORDER BY event_time DESC
+          LIMIT ?
+        `;
+        const result = await client.execute(
+          query,
+          [websiteId, eventType, startDate, limit],
+          {
+            prepare: true,
+          }
+        );
+        return result.rows.map((row) => new Event(row));
+      } else {
+        // Multiple days
+        const dates = this.generateDateRange(startDate, endDate);
+        const queries = dates.map((date) => ({
+          query: `
+            SELECT * FROM ${KEYSPACE}.events_by_type 
+            WHERE website_id = ? AND event_type = ? AND event_date = ?
+            ORDER BY event_time DESC
+          `,
+          params: [websiteId, eventType, date],
+        }));
 
-      const queries = dates.map((date) => ({
-        query: `
-          SELECT * FROM user_logs.events_by_date 
-          WHERE created_date = ? AND event_type = ?
-          ORDER BY timestamp DESC
-          ALLOW FILTERING
-        `,
-        params: [date, eventType],
-      }));
+        const results = await Promise.all(
+          queries.map((q) =>
+            client.execute(q.query, q.params, { prepare: true })
+          )
+        );
 
-      const results = await Promise.all(
-        queries.map((q) => client.execute(q.query, q.params, { prepare: true }))
-      );
+        const allRows = results.flatMap((result) => result.rows);
+        allRows.sort((a, b) => new Date(b.event_time) - new Date(a.event_time));
 
-      const allRows = results.flatMap((result) => result.rows);
-      allRows.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-      return allRows.slice(0, limit).map((row) => new Event(row));
+        return allRows.slice(0, limit).map((row) => new Event(row));
+      }
     } catch (error) {
       console.error("Error finding events by event type:", error);
       throw error;
@@ -318,19 +496,24 @@ export class Event {
   }
 
   /**
-   * Thống kê events theo ngày
+   * Thống kê events theo website và ngày
    */
-  static async getDailyStats(date) {
+  static async getDailyStats(websiteId, date) {
     try {
       const client = cassandraConnection.getClient();
-      const query = `
+
+      // Query from the daily metrics table if available, otherwise aggregate from events
+      let query = `
         SELECT event_type, COUNT(*) as count
-        FROM user_logs.events_by_date 
-        WHERE created_date = ?
+        FROM ${KEYSPACE}.events 
+        WHERE website_id = ? AND event_date = ?
         GROUP BY event_type
+        ALLOW FILTERING
       `;
 
-      const result = await client.execute(query, [date], { prepare: true });
+      const result = await client.execute(query, [websiteId, date], {
+        prepare: true,
+      });
 
       const stats = {};
       result.rows.forEach((row) => {
@@ -345,9 +528,9 @@ export class Event {
   }
 
   /**
-   * Lấy top pages theo số events
+   * Lấy top pages theo số events cho website
    */
-  static async getTopPages(startDate, endDate = null, limit = 10) {
+  static async getTopPages(websiteId, startDate, endDate = null, limit = 10) {
     try {
       const client = cassandraConnection.getClient();
 
@@ -364,12 +547,15 @@ export class Event {
       for (const date of dates) {
         const query = `
           SELECT page_url, COUNT(*) as count
-          FROM user_logs.events_by_date 
-          WHERE created_date = ?
+          FROM ${KEYSPACE}.events 
+          WHERE website_id = ? AND event_date = ?
           GROUP BY page_url
+          ALLOW FILTERING
         `;
 
-        const result = await client.execute(query, [date], { prepare: true });
+        const result = await client.execute(query, [websiteId, date], {
+          prepare: true,
+        });
 
         result.rows.forEach((row) => {
           const current = pageStats.get(row.page_url) || 0;
@@ -390,20 +576,110 @@ export class Event {
     }
   }
 
+  /**
+   * Lấy event metrics theo event type cho website
+   */
+  static async getEventTypeMetrics(
+    websiteId,
+    eventType,
+    startDate,
+    endDate = null
+  ) {
+    try {
+      const client = cassandraConnection.getClient();
+
+      if (!endDate) endDate = startDate;
+
+      const dates =
+        startDate === endDate
+          ? [startDate]
+          : this.generateDateRange(startDate, endDate);
+
+      let totalCount = 0;
+      const uniqueVisitors = new Set();
+
+      for (const date of dates) {
+        const query = `
+          SELECT visitor_id, COUNT(*) as count
+          FROM ${KEYSPACE}.events_by_type 
+          WHERE website_id = ? AND event_type = ? AND event_date = ?
+          GROUP BY visitor_id
+        `;
+
+        const result = await client.execute(
+          query,
+          [websiteId, eventType, date],
+          { prepare: true }
+        );
+
+        result.rows.forEach((row) => {
+          totalCount += parseInt(row.count);
+          uniqueVisitors.add(row.visitor_id);
+        });
+      }
+
+      return {
+        total_count: totalCount,
+        unique_visitors: uniqueVisitors.size,
+        event_type: eventType,
+        date_range: { start: startDate, end: endDate },
+      };
+    } catch (error) {
+      console.error("Error getting event type metrics:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Lấy session timeline - events trong một session theo thứ tự thời gian
+   */
+  static async getSessionTimeline(websiteId, sessionId) {
+    try {
+      const client = cassandraConnection.getClient();
+
+      const query = `
+        SELECT * FROM ${KEYSPACE}.events_by_session 
+        WHERE website_id = ? AND session_id = ?
+        ORDER BY event_time ASC
+      `;
+
+      const result = await client.execute(query, [websiteId, sessionId], {
+        prepare: true,
+      });
+      return result.rows.map((row) => new Event(row));
+    } catch (error) {
+      console.error("Error getting session timeline:", error);
+      throw error;
+    }
+  }
+
   toJSON() {
     return {
-      id: this.id,
+      event_id: this.event_id,
+      website_id: this.website_id,
+      visitor_id: this.visitor_id,
       user_id: this.user_id,
-      created_date: this.created_date,
-      timestamp: this.timestamp,
-      event_type: this.event_type,
-      element_type: this.element_type,
-      page_url: this.page_url,
-      element_id: this.element_id,
-      metadata: this.metadata,
-      ip_address: this.ip_address,
-      user_agent: this.user_agent,
       session_id: this.session_id,
+      event_date: this.event_date,
+      event_time: this.event_time,
+      event_type: this.event_type,
+      event_name: this.event_name,
+      page_url: this.page_url,
+      page_title: this.page_title,
+      element_selector: this.element_selector,
+      element_text: this.element_text,
+      device_type: this.device_type,
+      browser: this.browser,
+      os: this.os,
+      ip_address: this.ip_address,
+      country: this.country,
+      city: this.city,
+      referrer: this.referrer,
+      utm_source: this.utm_source,
+      utm_medium: this.utm_medium,
+      utm_campaign: this.utm_campaign,
+      duration_since_start: this.duration_since_start,
+      properties: this.properties,
     };
   }
 }

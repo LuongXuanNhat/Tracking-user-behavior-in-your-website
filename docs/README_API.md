@@ -58,7 +58,7 @@ SOURCE 'cassandra/setup-database.cql';
 #### Bước 5: Khởi động Backend API
 
 ```bash
-nodemon server.js
+npm run start
 # Backend API sẽ chạy tại http://localhost:3001
 ```
 

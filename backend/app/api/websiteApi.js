@@ -17,6 +17,7 @@ import process from "process";
 export async function createWebsite(req, res) {
   try {
     const customerId = req.customer.customerId;
+    console.log("Creating website for customer:", req.customer);
     const { name, url, type = "production", description = "" } = req.body;
 
     // Validation
@@ -36,6 +37,7 @@ export async function createWebsite(req, res) {
       });
     }
 
+    const apiKeyString = ApiKey.generateApiKey(name, type);
     // Tạo website mới
     const website = new Website({
       name,
@@ -43,28 +45,15 @@ export async function createWebsite(req, res) {
       customer_id: customerId,
       type,
       description,
+      api_key: apiKeyString,
     });
     await website.create();
-
-    // Tạo API key mặc định cho website
-    const apiKeyString = ApiKey.generateApiKey(name, type);
-    const apiKey = new ApiKey({
-      api_key: apiKeyString,
-      website_id: website.id,
-      website_name: name,
-      website_url: url,
-      type,
-      description: "API key mặc định",
-      owner: customer.email,
-    });
-    await apiKey.create();
 
     res.status(201).json({
       success: true,
       message: "Tạo website thành công",
       data: {
         website: website.toJSON(),
-        apiKey: apiKey.toJSON(),
       },
     });
   } catch (error) {
@@ -87,20 +76,9 @@ export async function getWebsites(req, res) {
 
     const websites = await Website.findByCustomerId(customerId);
 
-    // Lấy API keys cho mỗi website
-    const websitesWithKeys = await Promise.all(
-      websites.map(async (website) => {
-        const apiKeys = await ApiKey.findByWebsiteId(website.id);
-        return {
-          ...website.toJSON(),
-          apiKeys: apiKeys.map((key) => key.toJSON()),
-        };
-      })
-    );
-
     res.json({
       success: true,
-      data: websitesWithKeys,
+      data: websites,
     });
   } catch (error) {
     console.error("Get websites error:", error);
@@ -130,7 +108,8 @@ export async function getWebsite(req, res) {
     }
 
     // Kiểm tra quyền sở hữu
-    if (website.customer_id !== customerId) {
+
+    if (website.customer_id.toString() !== customerId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Không có quyền truy cập website này",
@@ -138,13 +117,11 @@ export async function getWebsite(req, res) {
     }
 
     // Lấy API keys
-    const apiKeys = await ApiKey.findByWebsiteId(website.id);
 
     res.json({
       success: true,
       data: {
         ...website.toJSON(),
-        apiKeys: apiKeys.map((key) => key.toJSON()),
       },
     });
   } catch (error) {
@@ -176,7 +153,7 @@ export async function updateWebsite(req, res) {
     }
 
     // Kiểm tra quyền sở hữu
-    if (website.customer_id !== customerId) {
+    if (website.customer_id.toString() !== customerId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Không có quyền truy cập website này",
@@ -226,7 +203,7 @@ export async function deleteWebsite(req, res) {
     }
 
     // Kiểm tra quyền sở hữu
-    if (website.customer_id !== customerId) {
+    if (website.customer_id.toString() !== customerId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Không có quyền truy cập website này",
@@ -234,8 +211,6 @@ export async function deleteWebsite(req, res) {
     }
 
     // Xóa tất cả API keys liên quan
-    const apiKeys = await ApiKey.findByWebsiteId(website.id);
-    await Promise.all(apiKeys.map((key) => key.delete()));
 
     // Xóa website
     await website.delete();
@@ -272,21 +247,10 @@ export async function getTrackingCode(req, res) {
     }
 
     // Kiểm tra quyền sở hữu
-    if (website.customer_id !== customerId) {
+    if (website.customer_id.toString() !== customerId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Không có quyền truy cập website này",
-      });
-    }
-
-    // Lấy API key đầu tiên active
-    const apiKeys = await ApiKey.findByWebsiteId(website.id);
-    const activeApiKey = apiKeys.find((key) => key.status === "active");
-
-    if (!activeApiKey) {
-      return res.status(404).json({
-        success: false,
-        message: "Không tìm thấy API key active cho website này",
       });
     }
 
@@ -295,7 +259,7 @@ export async function getTrackingCode(req, res) {
 <script>
 (function() {
   window.UserTracker = {
-    apiKey: "${activeApiKey.api_key}",
+    apiKey: "${website.api_key}",
     apiUrl: "${
       process.env.API_URL || "http://localhost:3000"
     }/api/tracking/events",
@@ -372,7 +336,7 @@ export async function getTrackingCode(req, res) {
       success: true,
       data: {
         trackingCode,
-        apiKey: activeApiKey.api_key,
+        apiKey: website.api_key,
         websiteName: website.name,
       },
     });

@@ -3,22 +3,23 @@
 
 import cassandraConnection from "../../config/database/init.js";
 import { v4 as uuidv4 } from "uuid";
-import cassandra from "cassandra-driver";
+import process from "process";
+
+const KEYSPACE = process.env.CASSANDRA_KEYSPACE || "user_behavior_analytics";
 
 export class Website {
   constructor(data = {}) {
-    this.id = data.id || uuidv4();
-    this.name = data.name;
-    this.url = data.url;
+    this.website_id = data.website_id || uuidv4();
     this.customer_id = data.customer_id;
-    this.type = data.type || "production";
-    this.description = data.description || "";
-    this.status = data.status || "active";
+    this.name = data.name;
+    this.domain = data.domain;
+    this.url = data.url;
+    this.status = data.status || "active"; // active, inactive, suspended
+    this.settings = data.settings || {};
+    this.api_key = data.api_key || new Set(); // SET<TEXT> in Cassandra
     this.created_at = data.created_at || new Date();
     this.updated_at = data.updated_at || new Date();
     this.last_activity = data.last_activity || null;
-    this.monthly_events = data.monthly_events || 0;
-    this.tracking_settings = data.tracking_settings || {};
 
     // Initialize settings properly
     const defaultSettings = {
@@ -28,22 +29,22 @@ export class Website {
       session_timeout: "30",
     };
 
-    if (data.tracking_settings) {
-      if (data.tracking_settings instanceof Map) {
-        this.tracking_settings = Object.fromEntries(data.tracking_settings);
+    if (data.settings) {
+      if (data.settings instanceof Map) {
+        this.settings = Object.fromEntries(data.settings);
       } else if (
-        typeof data.tracking_settings === "object" &&
-        !Array.isArray(data.tracking_settings)
+        typeof data.settings === "object" &&
+        !Array.isArray(data.settings)
       ) {
-        this.tracking_settings = {
+        this.settings = {
           ...defaultSettings,
-          ...data.tracking_settings,
+          ...data.settings,
         };
       } else {
-        this.tracking_settings = defaultSettings;
+        this.settings = defaultSettings;
       }
     } else {
-      this.tracking_settings = defaultSettings;
+      this.settings = defaultSettings;
     }
   }
 
@@ -53,23 +54,23 @@ export class Website {
   async create() {
     try {
       console.log("Creating website with data:", {
-        id: this.id,
+        website_id: this.website_id,
         name: this.name,
+        domain: this.domain,
         url: this.url,
         customer_id: this.customer_id,
-        tracking_settings: this.tracking_settings,
+        settings: this.settings,
       });
-
       const client = cassandraConnection.getClient();
       const query = `
-        INSERT INTO user_logs.websites (
-          id, name, url, customer_id, type, description, status,
-          created_at, updated_at, tracking_settings
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO ${KEYSPACE}.websites (
+          website_id, customer_id, name, domain, url, status,
+          settings, api_key, created_at, updated_at, last_activity
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       // Convert settings object to Map for Cassandra
-      const settingsToSave = this.tracking_settings || {};
+      const settingsToSave = this.settings || {};
       let settingsMap;
       if (
         settingsToSave &&
@@ -87,16 +88,17 @@ export class Website {
       }
 
       const params = [
-        this.id,
-        this.name,
-        this.url,
+        this.website_id,
         this.customer_id,
-        this.type,
-        this.description,
+        this.name,
+        this.domain,
+        this.url,
         this.status,
+        settingsMap,
+        this.api_key,
         this.created_at,
         this.updated_at,
-        settingsMap,
+        this.last_activity,
       ];
 
       await client.execute(query, params, { prepare: true });
@@ -113,8 +115,7 @@ export class Website {
   static async findByCustomerId(customerId) {
     try {
       const client = cassandraConnection.getClient();
-      const query =
-        "SELECT * FROM user_logs.websites WHERE customer_id = ? ALLOW FILTERING";
+      const query = `SELECT * FROM ${KEYSPACE}.websites WHERE customer_id = ? ALLOW FILTERING`;
       const result = await client.execute(query, [customerId], {
         prepare: true,
       });
@@ -129,16 +130,55 @@ export class Website {
   /**
    * Tìm website theo ID
    */
-  static async findById(id) {
+  static async findById(website_id) {
     try {
       const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM user_logs.websites WHERE id = ?";
-      const result = await client.execute(query, [id], { prepare: true });
+      const query = `SELECT * FROM ${KEYSPACE}.websites WHERE website_id = ?`;
+      const result = await client.execute(query, [website_id], {
+        prepare: true,
+      });
 
       if (result.rows.length === 0) return null;
       return new Website(result.rows[0]);
     } catch (error) {
       console.error("Error finding website by id:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Kiểm tra website có tồn tại theo API key
+   */
+  static async existsByApiKey(apiKey) {
+    try {
+      const client = cassandraConnection.getClient();
+      const query = `SELECT website_id FROM ${KEYSPACE}.websites WHERE api_key = ? ALLOW FILTERING`;
+      const result = await client.execute(query, [apiKey], {
+        prepare: true,
+      });
+
+      return result.rows.length > 0;
+    } catch (error) {
+      console.error("Error checking website existence by api key:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Tìm website theo API key
+   */
+  static async findByApiKey(apiKey) {
+    try {
+      const client = cassandraConnection.getClient();
+      const query = `SELECT * FROM ${KEYSPACE}.websites WHERE api_key = ? ALLOW FILTERING`;
+      const result = await client.execute(query, [apiKey], {
+        prepare: true,
+      });
+
+      if (result.rows.length === 0) return null;
+      return new Website(result.rows[0]);
+    } catch (error) {
+      console.error("Error finding website by api key:", error);
       throw error;
     }
   }
@@ -157,53 +197,48 @@ export class Website {
         fields.push("name = ?");
         values.push(this.name);
       }
+      if (updateData.domain !== undefined) {
+        this.domain = updateData.domain;
+        fields.push("domain = ?");
+        values.push(this.domain);
+      }
       if (updateData.url !== undefined) {
         this.url = updateData.url;
         fields.push("url = ?");
         values.push(this.url);
-      }
-      if (updateData.description !== undefined) {
-        this.description = updateData.description;
-        fields.push("description = ?");
-        values.push(this.description);
       }
       if (updateData.status !== undefined) {
         this.status = updateData.status;
         fields.push("status = ?");
         values.push(this.status);
       }
-      if (updateData.type !== undefined) {
-        this.type = updateData.type;
-        fields.push("type = ?");
-        values.push(this.type);
-      }
-      if (updateData.tracking_settings !== undefined) {
-        this.tracking_settings = {
-          ...this.tracking_settings,
-          ...updateData.tracking_settings,
+      if (updateData.settings !== undefined) {
+        this.settings = {
+          ...this.settings,
+          ...updateData.settings,
         };
-        fields.push("tracking_settings = ?");
-        values.push(new Map(Object.entries(this.tracking_settings)));
+        fields.push("settings = ?");
+        values.push(new Map(Object.entries(this.settings)));
+      }
+      if (updateData.api_key !== undefined) {
+        this.api_key = new Set(updateData.api_key);
+        fields.push("api_key = ?");
+        values.push(this.api_key);
       }
       if (updateData.last_activity !== undefined) {
         this.last_activity = updateData.last_activity;
         fields.push("last_activity = ?");
         values.push(this.last_activity);
       }
-      if (updateData.monthly_events !== undefined) {
-        this.monthly_events = updateData.monthly_events;
-        fields.push("monthly_events = ?");
-        values.push(this.monthly_events);
-      }
 
       this.updated_at = new Date();
       fields.push("updated_at = ?");
       values.push(this.updated_at);
-      values.push(this.id);
+      values.push(this.website_id);
 
-      const query = `UPDATE user_logs.websites SET ${fields.join(
+      const query = `UPDATE ${KEYSPACE}.websites SET ${fields.join(
         ", "
-      )} WHERE id = ?`;
+      )} WHERE website_id = ?`;
       await client.execute(query, values, { prepare: true });
 
       return this;
@@ -219,8 +254,8 @@ export class Website {
   async delete() {
     try {
       const client = cassandraConnection.getClient();
-      const query = "DELETE FROM user_logs.websites WHERE id = ?";
-      await client.execute(query, [this.id], { prepare: true });
+      const query = `DELETE FROM ${KEYSPACE}.websites WHERE website_id = ?`;
+      await client.execute(query, [this.website_id], { prepare: true });
       return true;
     } catch (error) {
       console.error("Error deleting website:", error);
@@ -237,12 +272,14 @@ export class Website {
       const now = new Date();
 
       const query = `
-        UPDATE user_logs.websites 
+        UPDATE ${KEYSPACE}.websites 
         SET last_activity = ?, monthly_events = monthly_events + 1, updated_at = ?
         WHERE id = ?
       `;
 
-      await client.execute(query, [now, now, this.id], { prepare: true });
+      await client.execute(query, [now, now, this.website_id], {
+        prepare: true,
+      });
       this.last_activity = now;
       this.updated_at = now;
       this.monthly_events += 1;
@@ -260,7 +297,7 @@ export class Website {
   static async findAll(limit = 100) {
     try {
       const client = cassandraConnection.getClient();
-      const query = "SELECT * FROM user_logs.websites LIMIT ?";
+      const query = `SELECT * FROM ${KEYSPACE}.websites LIMIT ?`;
       const result = await client.execute(query, [limit], { prepare: true });
 
       return result.rows.map((row) => new Website(row));
@@ -292,13 +329,14 @@ export class Website {
 
   toJSON() {
     return {
-      id: this.id,
+      id: this.website_id,
       name: this.name,
       url: this.url,
       customer_id: this.customer_id,
       type: this.type,
       description: this.description,
       status: this.status,
+      api_key: this.api_key,
       created_at: this.created_at,
       updated_at: this.updated_at,
       last_activity: this.last_activity,

@@ -3,10 +3,10 @@
 
 import { Customer } from "../models/Customer.js";
 import { Website } from "../models/Website.js";
-import { ApiKey } from "../models/ApiKey.js";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import process from "process";
+import { ApiKey } from "../models/ApiKey.js";
 
 /**
  * NGHIỆP VỤ 1: ĐĂNG KÝ & QUẢN LÝ KHÁCH HÀNG
@@ -46,46 +46,35 @@ export async function registerCustomer(req, res) {
       name,
       email,
       password_hash,
-      subscription_plan: "free",
+      plan: "free",
     });
-    await customer.create();
+    const createdCustomer = await customer.create();
 
+    const apiKeyString = ApiKey.generateApiKey(this.name, "production");
     // Tạo website đầu tiên
     const website = new Website({
       name: websiteName,
       url: websiteUrl,
-      customer_id: customer.id,
+      customer_id: createdCustomer.customer_id,
       type: "production",
+      api_key: apiKeyString,
     });
     await website.create();
 
-    // Tạo API key cho website
-    const apiKeyString = ApiKey.generateApiKey(websiteName, "production");
-    const apiKey = new ApiKey({
-      api_key: apiKeyString,
-      website_id: website.id,
-      website_name: websiteName,
-      website_url: websiteUrl,
-      type: "production",
-      description: "API key chính cho website",
-      owner: customer.email,
-    });
-    await apiKey.create();
-
     // Generate JWT token
+    console.log("Show customer id: ", createdCustomer.customer_id);
     const token = jwt.sign(
-      { customerId: customer.id, email: customer.email },
+      { customerId: createdCustomer.customer_id, email: createdCustomer.email },
       process.env.JWT_SECRET || "default_secret",
-      { expiresIn: "24h" }
+      { expiresIn: "30d" }
     );
 
     res.status(201).json({
       success: true,
       message: "Đăng ký thành công",
       data: {
-        customer: customer.toJSON(),
+        customer: createdCustomer.toJSON(),
         website: website.toJSON(),
-        apiKey: apiKey.toJSON(),
         token,
       },
     });
