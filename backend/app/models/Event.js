@@ -456,6 +456,9 @@ export class Event {
   /**
    * Tìm events theo website và date range từ bảng events chính
    */
+  /**
+   * Tìm events theo website và date range từ bảng events chính
+   */
   static async findByWebsiteAndDate(
     websiteId,
     startDate,
@@ -467,17 +470,20 @@ export class Event {
 
       if (!endDate) endDate = startDate;
 
-      let query, params;
-
       if (startDate === endDate) {
         // Single day query
-        query = `
+        const query = `
           SELECT * FROM ${KEYSPACE}.events 
           WHERE website_id = ? AND event_date = ?
           ORDER BY event_time DESC
           LIMIT ?
         `;
-        params = [websiteId, startDate, limit];
+        const params = [websiteId, startDate, limit];
+
+        const result = await client.execute(query, params, { prepare: true });
+        // console.log("Query result rows:", result.rows.length);
+
+        return result.rows.map((row) => new Event(row));
       } else {
         // Multiple days - need to query each day separately
         const dates = this.generateDateRange(startDate, endDate);
@@ -490,20 +496,19 @@ export class Event {
           params: [websiteId, date],
         }));
 
+        console.log("Multiple days query for events:");
         const results = await Promise.all(
           queries.map((q) =>
             client.execute(q.query, q.params, { prepare: true })
           )
         );
 
+        console.log("Results count:", results.length);
         const allRows = results.flatMap((result) => result.rows);
         allRows.sort((a, b) => new Date(b.event_time) - new Date(a.event_time));
 
         return allRows.slice(0, limit).map((row) => new Event(row));
       }
-
-      const result = await client.execute(query, params, { prepare: true });
-      return result.rows.map((row) => new Event(row));
     } catch (error) {
       console.error("Error finding events by website and date:", error);
       throw error;
@@ -994,6 +999,150 @@ export class Event {
       return allEvents.slice(0, limit).map((row) => new Event(row));
     } catch (error) {
       console.error("Error finding events by session ID:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Lấy events realtime cho một website - tối ưu cho realtime display
+   * Sử dụng ORDER BY event_time DESC để lấy events mới nhất
+   */
+  static async findRealtimeByWebsite(websiteId, options = {}) {
+    try {
+      const client = cassandraConnection.getClient();
+      const { limit = 20, pageToken } = options;
+
+      // Lấy ngày hiện tại
+      const today = new Date().toISOString().split("T")[0];
+
+      let query, params;
+
+      if (pageToken) {
+        // Pagination với token (timestamp của event cuối cùng)
+        query = `
+          SELECT * FROM ${KEYSPACE}.events 
+          WHERE website_id = ? AND event_date = ? AND event_time < ?
+          ORDER BY event_time DESC
+          LIMIT ?
+        `;
+        params = [websiteId, today, new Date(pageToken), limit];
+      } else {
+        // Lần đầu tiên load
+        query = `
+          SELECT * FROM ${KEYSPACE}.events 
+          WHERE website_id = ? AND event_date = ?
+          ORDER BY event_time DESC
+          LIMIT ?
+        `;
+        params = [websiteId, today, limit];
+      }
+
+      const result = await client.execute(query, params, { prepare: true });
+      return result.rows.map((row) => new Event(row));
+    } catch (error) {
+      console.error("Error finding realtime events by website:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Lấy events realtime theo date range với pagination
+   * Tối ưu cho Cassandra query pattern
+   */
+  static async findByWebsiteAndDateRange(
+    websiteId,
+    startDate,
+    endDate,
+    options = {}
+  ) {
+    try {
+      const client = cassandraConnection.getClient();
+      const { limit = 50, pageToken } = options;
+
+      // Generate date range
+      const dates =
+        startDate === endDate
+          ? [startDate]
+          : this.generateDateRange(startDate, endDate);
+
+      const allEvents = [];
+
+      for (const date of dates) {
+        let query, params;
+
+        if (pageToken && date === endDate) {
+          // Pagination chỉ áp dụng cho ngày cuối cùng
+          query = `
+            SELECT * FROM ${KEYSPACE}.events 
+            WHERE website_id = ? AND event_date = ? AND event_time < ?
+            ORDER BY event_time DESC
+          `;
+          params = [websiteId, date, new Date(pageToken)];
+        } else {
+          query = `
+            SELECT * FROM ${KEYSPACE}.events 
+            WHERE website_id = ? AND event_date = ?
+            ORDER BY event_time DESC
+          `;
+          params = [websiteId, date];
+        }
+
+        const result = await client.execute(query, params, { prepare: true });
+        allEvents.push(...result.rows);
+
+        // Break nếu đã đủ limit
+        if (allEvents.length >= limit) {
+          break;
+        }
+      }
+
+      // Sort by time descending và limit
+      allEvents.sort((a, b) => new Date(b.event_time) - new Date(a.event_time));
+      return allEvents.slice(0, limit).map((row) => new Event(row));
+    } catch (error) {
+      console.error("Error finding events by website and date range:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Lấy events mới nhất trong khoảng thời gian gần đây
+   * Tối ưu cho stream realtime
+   */
+  static async findRecentByWebsite(websiteId, startTime, options = {}) {
+    try {
+      const client = cassandraConnection.getClient();
+      const { limit = 100 } = options;
+
+      // Lấy ngày của startTime
+      const startDate = startTime.toISOString().split("T")[0];
+      const today = new Date().toISOString().split("T")[0];
+
+      // Query events từ startTime đến hiện tại
+      const dates =
+        startDate === today
+          ? [today]
+          : this.generateDateRange(startDate, today);
+
+      const allEvents = [];
+
+      for (const date of dates) {
+        const query = `
+          SELECT * FROM ${KEYSPACE}.events 
+          WHERE website_id = ? AND event_date = ? AND event_time >= ?
+          ORDER BY event_time DESC
+        `;
+
+        const params = [websiteId, date, startTime];
+        const result = await client.execute(query, params, { prepare: true });
+        allEvents.push(...result.rows);
+      }
+
+      // Sort by time descending và limit
+      allEvents.sort((a, b) => new Date(b.event_time) - new Date(a.event_time));
+      return allEvents.slice(0, limit).map((row) => new Event(row));
+    } catch (error) {
+      console.error("Error finding recent events by website:", error);
       throw error;
     }
   }

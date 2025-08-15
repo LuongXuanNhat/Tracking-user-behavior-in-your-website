@@ -11,6 +11,7 @@ import {
   getDailyEventStats,
   getTopPages,
   trackingHealthCheck,
+  testBroadcast,
 } from "../api/trackingApi.js";
 import { validateApiKey } from "../middlewares/apikey.js";
 
@@ -20,6 +21,9 @@ const router = express.Router();
 router.post("/events", validateApiKey, collectEvent);
 router.post("/events/batch", validateApiKey, collectBatchEvents);
 router.get("/health", validateApiKey, trackingHealthCheck);
+
+// Test route for development
+router.post("/test-broadcast", testBroadcast);
 
 // Protected routes for analytics
 router.get("/events", validateApiKey, getEventsByDateRange);

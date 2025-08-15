@@ -2,8 +2,7 @@
 // API endpoints cho thu thập events (tracking)
 
 import { Event } from "../models/Event.js";
-import { ApiKey } from "../models/ApiKey.js";
-import { Website } from "../models/Website.js";
+import socketService from "../services/socketService.js";
 import { v4 as uuidv4 } from "uuid";
 
 /**
@@ -112,6 +111,21 @@ export async function collectEvent(req, res) {
 
     // Lưu event vào database
     await event.create();
+
+    // Broadcast event realtime to subscribed users và owner website
+    if (socketService.isInitialized()) {
+      await socketService.broadcastNewEvent(
+        website.website_id.toString(),
+        event
+      );
+      console.log(
+        `✅ Event ${event.event_id} broadcast completed for website ${website.website_id}`
+      );
+    } else {
+      console.warn(
+        `⚠️  Socket.IO not initialized - Event ${event.event_id} not broadcasted for website ${website.website_id}`
+      );
+    }
 
     // Cập nhật hoạt động cuối của website nếu có method này
     // if (website.updateLastActivity) {
@@ -242,6 +256,18 @@ export async function collectBatchEvents(req, res) {
 
         // Lưu event vào database
         await event.create();
+
+        // Broadcast event realtime to subscribed users và owner website
+        if (socketService.isInitialized()) {
+          await socketService.broadcastNewEvent(
+            website.website_id.toString(),
+            event
+          );
+        } else {
+          console.warn(
+            `⚠️  Socket.IO not initialized - Batch event ${event.event_id} not broadcasted for website ${website.website_id}`
+          );
+        }
 
         createdEvents.push({
           event_id: event.event_id,
@@ -461,6 +487,65 @@ export async function trackingHealthCheck(req, res) {
     res.status(500).json({
       success: false,
       message: "Tracking service is unhealthy",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Test endpoint để broadcast event test
+ * POST /api/tracking/test-broadcast
+ */
+export async function testBroadcast(req, res) {
+  try {
+    const { websiteId } = req.body;
+
+    if (!websiteId) {
+      return res.status(400).json({
+        success: false,
+        message: "websiteId là bắt buộc",
+      });
+    }
+
+    // Tạo một test event
+    const testEvent = {
+      event_id: uuidv4(),
+      event_type: "test",
+      event_name: "Test Event",
+      page_url: "https://test.example.com/test",
+      page_title: "Test Page",
+      visitor_id: uuidv4(),
+      session_id: uuidv4(),
+      user_id: null,
+      event_time: new Date(),
+      device_type: "desktop",
+      browser: "Chrome",
+      os: "Windows",
+      country: "VN",
+      city: "Ho Chi Minh",
+      properties: { test: true },
+    };
+
+    // Broadcast test event
+    if (socketService.isInitialized()) {
+      await socketService.broadcastNewEvent(websiteId.toString(), testEvent);
+    } else {
+      console.warn(`⚠️  Socket.IO not initialized for test broadcast`);
+    }
+
+    res.json({
+      success: true,
+      message: "Test event broadcasted",
+      data: {
+        websiteId: websiteId,
+        event: testEvent,
+      },
+    });
+  } catch (error) {
+    console.error("Test broadcast error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server",
       error: error.message,
     });
   }

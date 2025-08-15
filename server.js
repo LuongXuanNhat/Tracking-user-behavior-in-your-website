@@ -3,6 +3,7 @@
 import app from "./backend/app.js";
 import { createServer } from "http";
 import cassandraConnection from "./backend/config/database/init.js";
+import socketService from "./backend/app/services/socketService.js";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -16,9 +17,20 @@ async function startServer() {
     console.log("🔄 Connecting to Cassandra...");
     await cassandraConnection.connect();
 
+    // Initialize Socket.IO
+    console.log("🔌 Initializing Socket.IO...");
+    socketService.init(server);
+    console.log("✅ Socket.IO initialized successfully");
+
     server.listen(PORT, () => {
       console.log(`🚀 Server is running at http://localhost:${PORT}`);
       console.log(`📋 API Documentation: http://localhost:${PORT}/`);
+      console.log(`🔌 Socket.IO server ready for connections`);
+      console.log(
+        `📊 Socket.IO Status: ${
+          socketService.isInitialized() ? "Ready" : "Not Ready"
+        }`
+      );
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);

@@ -30,6 +30,8 @@ import trackingRoutes from "./app/routes/tracking.js";
 import analyticsRoutes from "./app/routes/analytics.js";
 import websiteRoutes from "./app/routes/website.js";
 import apiKeyRoutes from "./app/routes/apikey.js";
+import realtimeRoutes from "./app/routes/realtime.js";
+import socketService from "./app/services/socketService.js";
 
 app.use("/api/customers", customerRoutes);
 app.use("/api/users", userRoutes);
@@ -37,6 +39,7 @@ app.use("/api/tracking", trackingRoutes);
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/websites", websiteRoutes);
 app.use("/api/api-keys", apiKeyRoutes);
+app.use("/api/realtime", realtimeRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -51,6 +54,7 @@ app.get("/", (req, res) => {
       analytics: "/api/analytics",
       websites: "/api/websites",
       apiKeys: "/api/api-keys",
+      realtime: "/api/realtime",
     },
     auth: {
       required: true,
@@ -67,6 +71,28 @@ app.get("/health", (req, res) => {
     status: "healthy",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
+    socketIO: {
+      initialized: socketService.isInitialized(),
+      stats: socketService.isInitialized() ? socketService.getStats() : null,
+      connections: socketService.isInitialized()
+        ? socketService.getConnectionInfo()
+        : null,
+    },
+  });
+});
+
+// Debug endpoint cho Socket.IO connections
+app.get("/debug/realtime", (req, res) => {
+  if (!socketService.isInitialized()) {
+    return res.status(503).json({
+      status: "error",
+      message: "Socket.IO not initialized",
+    });
+  }
+
+  res.json({
+    status: "success",
+    data: socketService.getConnectionInfo(),
   });
 });
 
@@ -226,7 +252,8 @@ app.use("*", (req, res) => {
 });
 
 // Error handler
-app.use((err, req, res, next) => {
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, _next) => {
   console.error(err.stack);
   res.status(500).json({
     status: "error",

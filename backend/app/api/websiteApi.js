@@ -97,7 +97,7 @@ export async function createWebsite(req, res) {
 export async function getWebsites(req, res) {
   try {
     const customerId = req.customer.customerId;
-    console.log("Getting websites for customer:", req.customer);
+    // console.log("Getting websites for customer:", req.customer);
     const websites = await Website.findByCustomerId(customerId);
 
     res.json({
@@ -122,7 +122,6 @@ export async function getAllEventByWebsite(req, res) {
   try {
     const customerId = req.customer.customerId;
     const {
-      website_id,
       start_date,
       end_date,
       limit = 100,
@@ -131,6 +130,7 @@ export async function getAllEventByWebsite(req, res) {
       session_id,
     } = req.query;
 
+    const { website_id } = req.params;
     // Validation
     if (!website_id) {
       return res.status(400).json({

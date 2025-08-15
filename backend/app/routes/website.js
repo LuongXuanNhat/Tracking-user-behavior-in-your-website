@@ -20,10 +20,10 @@ const router = express.Router();
 router.use(authenticateCustomer);
 
 router.post("/", createWebsite);
-router.get("/", getWebsites);
-router.get("/getAllEvent", getAllEventByWebsite);
-router.get("/stats", getWebsiteStats);
 router.get("/:id", getWebsite);
+router.get("/", getWebsites);
+router.get("/:website_id/events", getAllEventByWebsite);
+router.get("/stats", getWebsiteStats);
 router.put("/:id", updateWebsite);
 router.delete("/:id", deleteWebsite);
 router.get("/:id/tracking-code", getTrackingCode);
