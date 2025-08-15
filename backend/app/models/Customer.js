@@ -14,6 +14,7 @@ export class Customer {
     this.customer_id = data.customer_id || uuidv4();
     this.name = data.name;
     this.email = data.email;
+    this.password_hash = data.password_hash || null;
     this.company = data.company || null;
     this.plan = data.plan || "free"; // free, premium, enterprise
     this.status = data.status || "active"; // active, suspended, inactive
@@ -33,8 +34,8 @@ export class Customer {
       const query = `
         INSERT INTO ${KEYSPACE}.customers (
           customer_id, name, email, company, plan, status,
-          settings, created_at, updated_at, last_login
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          settings, created_at, updated_at, last_login, password_hash
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       const params = [
@@ -48,6 +49,7 @@ export class Customer {
         this.created_at,
         this.updated_at,
         this.last_login,
+        this.password_hash,
       ];
 
       await client.execute(query, params, { prepare: true });

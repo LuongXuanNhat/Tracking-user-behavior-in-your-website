@@ -328,10 +328,27 @@ export class Website {
   }
 
   toJSON() {
+    // Extract domain from URL
+    let domain = this.url;
+    if (this.url) {
+      try {
+        const urlObj = new URL(
+          this.url.startsWith("http") ? this.url : `https://${this.url}`
+        );
+        domain = urlObj.hostname;
+      } catch (error) {
+        // If URL parsing fails, use the original URL
+        console.warn("Failed to parse URL:", this.url, error.message);
+        domain = this.url;
+      }
+    }
+
     return {
-      id: this.website_id,
+      website_id: this.website_id,
+      id: this.website_id, // Keep for backward compatibility
       name: this.name,
       url: this.url,
+      domain: domain,
       customer_id: this.customer_id,
       type: this.type,
       description: this.description,

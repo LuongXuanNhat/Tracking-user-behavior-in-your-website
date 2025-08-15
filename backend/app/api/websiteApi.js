@@ -4,7 +4,31 @@
 import { Website } from "../models/Website.js";
 import { ApiKey } from "../models/ApiKey.js";
 import { Customer } from "../models/Customer.js";
+import { Event } from "../models/Event.js";
 import process from "process";
+
+/**
+ * Utility function to validate UUID
+ */
+function validateUUID(id, fieldName = "ID") {
+  if (!id || id === "undefined" || id === "null") {
+    return {
+      isValid: false,
+      error: `${fieldName} không hợp lệ`,
+    };
+  }
+
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(id)) {
+    return {
+      isValid: false,
+      error: `${fieldName} phải là UUID hợp lệ`,
+    };
+  }
+
+  return { isValid: true };
+}
 
 /**
  * NGHIỆP VỤ 1: ĐĂNG KÝ & QUẢN LÝ WEBSITES
@@ -73,18 +97,155 @@ export async function createWebsite(req, res) {
 export async function getWebsites(req, res) {
   try {
     const customerId = req.customer.customerId;
-
+    console.log("Getting websites for customer:", req.customer);
     const websites = await Website.findByCustomerId(customerId);
 
     res.json({
       success: true,
-      data: websites,
+      data: websites.map((website) => website.toJSON()),
     });
   } catch (error) {
     console.error("Get websites error:", error);
     res.status(500).json({
       success: false,
       message: "Lỗi server",
+      error: error.message,
+    });
+  }
+}
+
+/**
+ * Lấy danh sách events của mỗi website theo website_id
+ * GET /api/websites/getAllEvent?website_id=xxx&start_date=xxx&end_date=xxx&limit=xxx&event_type=xxx
+ */
+export async function getAllEventByWebsite(req, res) {
+  try {
+    const customerId = req.customer.customerId;
+    const {
+      website_id,
+      start_date,
+      end_date,
+      limit = 100,
+      event_type,
+      visitor_id,
+      session_id,
+    } = req.query;
+
+    // Validation
+    if (!website_id) {
+      return res.status(400).json({
+        success: false,
+        message: "website_id là bắt buộc",
+      });
+    }
+
+    // Validation UUID cho website_id
+    const validation = validateUUID(website_id, "website_id");
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
+    // Kiểm tra website có tồn tại và thuộc về customer
+    const website = await Website.findById(website_id);
+    if (!website) {
+      return res.status(404).json({
+        success: false,
+        message: "Không tìm thấy website",
+      });
+    }
+
+    // Kiểm tra quyền sở hữu
+    if (website.customer_id.toString() !== customerId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Không có quyền truy cập website này",
+      });
+    }
+
+    let events = [];
+    const limitNum = parseInt(limit) || 100;
+
+    // Lấy events theo các tiêu chí khác nhau
+    if (visitor_id) {
+      // Lấy events theo visitor_id (user journey)
+      events = await Event.findByVisitor(website_id, visitor_id, limitNum);
+    } else if (session_id) {
+      // Lấy events theo session_id (session analysis)
+      events = await Event.findBySession(website_id, session_id, limitNum);
+    } else if (event_type && start_date) {
+      // Lấy events theo event type và date range
+      events = await Event.findByEventType(
+        website_id,
+        event_type,
+        start_date,
+        end_date,
+        limitNum
+      );
+    } else if (start_date) {
+      // Lấy events theo date range
+      events = await Event.findByWebsiteAndDate(
+        website_id,
+        start_date,
+        end_date,
+        limitNum
+      );
+    } else {
+      // Lấy events mới nhất (mặc định 7 ngày gần nhất)
+      const defaultEndDate = new Date();
+      const defaultStartDate = new Date();
+      defaultStartDate.setDate(defaultStartDate.getDate() - 7);
+
+      events = await Event.findByWebsiteAndDate(
+        website_id,
+        defaultStartDate.toISOString().split("T")[0],
+        defaultEndDate.toISOString().split("T")[0],
+        limitNum
+      );
+    }
+
+    // Thống kê tổng quan
+    const stats = {
+      total_events: events.length,
+      date_range: {
+        start_date: start_date || "Last 7 days",
+        end_date: end_date || new Date().toISOString().split("T")[0],
+      },
+      filters_applied: {
+        website_id,
+        event_type: event_type || null,
+        visitor_id: visitor_id || null,
+        session_id: session_id || null,
+      },
+    };
+
+    // Nhóm events theo loại
+    const eventsByType = events.reduce((acc, event) => {
+      const type = event.event_type || "unknown";
+      acc[type] = (acc[type] || 0) + 1;
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      message: `Lấy danh sách events thành công`,
+      data: {
+        events: events.map((event) => (event.toJSON ? event.toJSON() : event)),
+        stats,
+        events_by_type: eventsByType,
+        pagination: {
+          limit: limitNum,
+          returned_count: events.length,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Get events by website error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Lỗi server khi lấy danh sách events",
       error: error.message,
     });
   }
@@ -99,6 +260,15 @@ export async function getWebsite(req, res) {
     const customerId = req.customer.customerId;
     const { id } = req.params;
 
+    // Validation UUID
+    const validation = validateUUID(id, "ID website");
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
     const website = await Website.findById(id);
     if (!website) {
       return res.status(404).json({
@@ -108,15 +278,12 @@ export async function getWebsite(req, res) {
     }
 
     // Kiểm tra quyền sở hữu
-
     if (website.customer_id.toString() !== customerId.toString()) {
       return res.status(403).json({
         success: false,
         message: "Không có quyền truy cập website này",
       });
     }
-
-    // Lấy API keys
 
     res.json({
       success: true,
@@ -143,6 +310,15 @@ export async function updateWebsite(req, res) {
     const customerId = req.customer.customerId;
     const { id } = req.params;
     const { name, url, description, status, tracking_settings } = req.body;
+
+    // Validation UUID
+    const validation = validateUUID(id, "ID website");
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
 
     const website = await Website.findById(id);
     if (!website) {
@@ -194,6 +370,15 @@ export async function deleteWebsite(req, res) {
     const customerId = req.customer.customerId;
     const { id } = req.params;
 
+    // Validation UUID
+    const validation = validateUUID(id, "ID website");
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
     const website = await Website.findById(id);
     if (!website) {
       return res.status(404).json({
@@ -238,6 +423,15 @@ export async function getTrackingCode(req, res) {
     const customerId = req.customer.customerId;
     const { id } = req.params;
 
+    // Validation UUID
+    const validation = validateUUID(id, "ID website");
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error,
+      });
+    }
+
     const website = await Website.findById(id);
     if (!website) {
       return res.status(404).json({
@@ -261,7 +455,7 @@ export async function getTrackingCode(req, res) {
   window.UserTracker = {
     apiKey: "${website.api_key}",
     apiUrl: "${
-      process.env.API_URL || "http://localhost:3000"
+      process.env.API_URL || "http://localhost:3002"
     }/api/tracking/events",
     
     init: function() {

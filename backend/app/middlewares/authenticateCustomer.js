@@ -26,7 +26,7 @@ export async function authenticateCustomer(req, res, next) {
       token,
       process.env.JWT_SECRET || "default_secret"
     );
-    // console.log("Decoded token:", decoded);
+    console.log("Decoded token:", decoded);
     // Lấy thông tin customer
     const customer = await Customer.findById(decoded.customerId);
     if (!customer) {

@@ -10,6 +10,7 @@ import {
   deleteWebsite,
   getTrackingCode,
   getWebsiteStats,
+  getAllEventByWebsite,
 } from "../api/websiteApi.js";
 import { authenticateCustomer } from "../middlewares/authenticateCustomer.js";
 
@@ -20,6 +21,7 @@ router.use(authenticateCustomer);
 
 router.post("/", createWebsite);
 router.get("/", getWebsites);
+router.get("/getAllEvent", getAllEventByWebsite);
 router.get("/stats", getWebsiteStats);
 router.get("/:id", getWebsite);
 router.put("/:id", updateWebsite);

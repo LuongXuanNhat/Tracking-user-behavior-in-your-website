@@ -50,7 +50,7 @@ export async function registerCustomer(req, res) {
     });
     const createdCustomer = await customer.create();
 
-    const apiKeyString = ApiKey.generateApiKey(this.name, "production");
+    const apiKeyString = ApiKey.generateApiKey(name, "production");
     // Tạo website đầu tiên
     const website = new Website({
       name: websiteName,
@@ -95,6 +95,8 @@ export async function registerCustomer(req, res) {
 export async function loginCustomer(req, res) {
   try {
     const { email, password } = req.body;
+    console.log("Login customer with email:", email);
+    console.log("Login customer with password:", password);
 
     if (!email || !password) {
       return res.status(400).json({
@@ -112,11 +114,21 @@ export async function loginCustomer(req, res) {
       });
     }
 
-    // Verify password
+    // Kiểm tra xem customer có password_hash không
+    if (!customer.password_hash) {
+      console.error("Customer password_hash is missing for email:", email);
+      return res.status(401).json({
+        success: false,
+        message: "Email hoặc password không đúng",
+      });
+    }
+
+    // Verify password - thêm kiểm tra an toàn
     const isValidPassword = await bcrypt.compare(
-      password,
-      customer.password_hash
+      String(password), // Đảm bảo password là string
+      String(customer.password_hash) // Đảm bảo hash là string
     );
+
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
@@ -129,7 +141,7 @@ export async function loginCustomer(req, res) {
 
     // Generate JWT token
     const token = jwt.sign(
-      { customerId: customer.id, email: customer.email },
+      { customerId: customer.customer_id, email: customer.email },
       process.env.JWT_SECRET || "default_secret",
       { expiresIn: "24h" }
     );
@@ -151,7 +163,6 @@ export async function loginCustomer(req, res) {
     });
   }
 }
-
 /**
  * Lấy thông tin profile khách hàng
  * GET /api/customers/profile

@@ -5,7 +5,10 @@
   "main": "server.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "nodemon -r dotenv/config server.js",
+    "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
+    "start:backend": "nodemon -r dotenv/config server.js",
+    "start:frontend": "cd frontend && npm run dev",
+    "install:all": "npm install && cd frontend && npm install",
     "key:create": "node tools/api-key-manager.js create",
     "key:list": "node tools/api-key-manager.js list",
     "key:stats": "node tools/api-key-manager.js stats",
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.31.0",
+    "concurrently": "^9.2.0",
     "eslint": "^9.31.0",
     "globals": "^16.3.0",
     "nodemon": "^3.1.10"
