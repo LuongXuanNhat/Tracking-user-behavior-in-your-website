@@ -1,46 +1,184 @@
 version: "3.8"
 
 services:
-  cassandra:
+  # ====================================
+  # CASSANDRA CLUSTER - SINGLE DC
+  # ====================================
+  cassandra-node1:
     image: cassandra:4.1
-    container_name: cassandra_user_logs
+    container_name: cassandra_node1
+    hostname: cassandra-node1
     ports:
-      - "9042:9042" # CQL port only
+      - "9042:9042" # CQL port
+      - "7000:7000" # Inter-node communication
+      - "7199:7199" # JMX port
     environment:
       - CASSANDRA_CLUSTER_NAME=UserLogCluster
       - CASSANDRA_DC=datacenter1
       - CASSANDRA_RACK=rack1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
-      - CASSANDRA_NUM_TOKENS=128
+      - CASSANDRA_NUM_TOKENS=256
+      - CASSANDRA_SEEDS=cassandra-node1
+      - MAX_HEAP_SIZE=1G
+      - HEAP_NEWSIZE=256M
+      - CASSANDRA_CONCURRENT_READS=16
+      - CASSANDRA_CONCURRENT_WRITES=16
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=16
+      - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=2
+      - CASSANDRA_CONCURRENT_COMPACTORS=2
+      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=32
     volumes:
-      - cassandra_data:/var/lib/cassandra
+      - cassandra_node1_data:/var/lib/cassandra
       - ./cassandra/init:/docker-entrypoint-initdb.d
     networks:
       - cassandra_network
     healthcheck:
-      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 2m
+      timeout: 15s
+      retries: 10
+      start_period: 3m
+    ulimits:
+      memlock: -1
+      nofile: 100000
+      nproc: 32768
+    restart: unless-stopped
 
+  cassandra-node2:
+    image: cassandra:4.1
+    container_name: cassandra_node2
+    hostname: cassandra-node2
+    ports:
+      - "9043:9042"
+      - "7001:7000"
+      - "7200:7199"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=UserLogCluster
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+      - CASSANDRA_SEEDS=cassandra-node1
+      - MAX_HEAP_SIZE=1G
+      - HEAP_NEWSIZE=256M
+      - CASSANDRA_CONCURRENT_READS=16
+      - CASSANDRA_CONCURRENT_WRITES=16
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=16
+      - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=2
+      - CASSANDRA_CONCURRENT_COMPACTORS=2
+      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=32
+    volumes:
+      - cassandra_node2_data:/var/lib/cassandra
+    networks:
+      - cassandra_network
+    depends_on:
+      cassandra-node1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 4m
+    ulimits:
+      memlock: -1
+      nofile: 100000
+      nproc: 32768
+    restart: unless-stopped
+
+  cassandra-node3:
+    image: cassandra:4.1
+    container_name: cassandra_node3
+    hostname: cassandra-node3
+    ports:
+      - "9044:9042"
+      - "7002:7000"
+      - "7201:7199"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=UserLogCluster
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=256
+      - CASSANDRA_SEEDS=cassandra-node1
+      - MAX_HEAP_SIZE=1G
+      - HEAP_NEWSIZE=256M
+      - CASSANDRA_CONCURRENT_READS=16
+      - CASSANDRA_CONCURRENT_WRITES=16
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=16
+      - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=2
+      - CASSANDRA_CONCURRENT_COMPACTORS=2
+      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=32
+    volumes:
+      - cassandra_node3_data:/var/lib/cassandra
+    networks:
+      - cassandra_network
+    depends_on:
+      cassandra-node2:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 5m
+    ulimits:
+      memlock: -1
+      nofile: 100000
+      nproc: 32768
+    restart: unless-stopped
+
+  # ====================================
+  # MONITORING & MANAGEMENT
+  # ====================================
   cassandra-web:
     image: ipushc/cassandra-web
     container_name: cassandra_web_ui
     ports:
       - "3001:3000"
     environment:
-      - CASSANDRA_HOST=cassandra
+      - CASSANDRA_HOST=cassandra-node1
       - CASSANDRA_PORT=9042
+      - CASSANDRA_USER=
+      - CASSANDRA_PASSWORD=
     depends_on:
-      cassandra:
+      cassandra-node1:
         condition: service_healthy
     networks:
       - cassandra_network
+    restart: unless-stopped
+
+  # Load balancer for client connections
+  haproxy:
+    image: haproxy:2.8
+    container_name: cassandra_load_balancer
+    ports:
+      - "9142:9142" # Load balanced CQL port
+    volumes:
+      - ./load-balancer/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
+    depends_on:
+      - cassandra-node1
+      - cassandra-node2
+      - cassandra-node3
+    networks:
+      - cassandra_network
+    restart: unless-stopped
 
 volumes:
-  cassandra_data:
+  cassandra_node1_data:
+    driver: local
+  cassandra_node2_data:
+    driver: local
+  cassandra_node3_data:
+    driver: local
 
 networks:
   cassandra_network:
     driver: bridge
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.20.0.0/16
