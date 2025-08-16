@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS customers (
     plan TEXT, -- free, premium, enterprise
     status TEXT, -- active, suspended, inactive
     settings MAP<TEXT, TEXT>,
+    password_hash TEXT, -- for customer authentication
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
     last_login TIMESTAMP
@@ -37,7 +38,7 @@ CREATE TABLE IF NOT EXISTS websites (
     url TEXT,
     status TEXT, -- active, inactive, suspended
     settings MAP<TEXT, TEXT>, -- tracking settings, privacy config
-    api_keys SET<TEXT>, -- multiple API keys per website
+    api_key TEXT, -- changed from SET<TEXT> to TEXT
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
     last_activity TIMESTAMP
@@ -392,6 +393,7 @@ CREATE INDEX IF NOT EXISTS customers_status_idx ON customers (status);
 
 CREATE INDEX IF NOT EXISTS websites_customer_idx ON websites (customer_id);
 CREATE INDEX IF NOT EXISTS websites_domain_idx ON websites (domain);
+CREATE INDEX IF NOT EXISTS websites_api_key_idx ON websites (api_key);
 
 CREATE INDEX IF NOT EXISTS identified_users_website_idx ON identified_users (website_id);
 CREATE INDEX IF NOT EXISTS identified_users_external_idx ON identified_users (external_user_id);

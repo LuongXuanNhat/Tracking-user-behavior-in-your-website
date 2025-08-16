@@ -1,6 +1,6 @@
 // models/Event.js
 // Model để quản lý user events với Cassandra integration
-// Tái cấu trúc theo schema database_v2.cql
+// Tái cấu trúc theo schema database.cql
 
 import cassandraConnection from "../../config/database/init.js";
 import { v4 as uuidv4 } from "uuid";

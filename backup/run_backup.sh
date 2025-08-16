@@ -1,15 +1,16 @@
 #!/bin/bash
 
-# Cassandra Database Backup Script for Linux/Mac
-# Usage: ./backup_cassandra.sh
+# ===================================
+# Cassandra Database Backup Script
+# ===================================
 
 # Configuration
 CONTAINER_NAME="cassandra_user_logs"
 KEYSPACE="user_behavior_analytics"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BACKUP_DIR="${SCRIPT_DIR}/backups"
 DATE_TIME=$(date +%Y%m%d_%H%M%S)
 SNAPSHOT_NAME="backup_${DATE_TIME}"
+BACKUP_DIR="${SCRIPT_DIR}/backups/${SNAPSHOT_NAME}"
 
 echo "====================================="
 echo "Cassandra Database Backup Script"
@@ -21,6 +22,11 @@ echo "Snapshot Name: ${SNAPSHOT_NAME}"
 echo "====================================="
 
 # Tạo thư mục backup nếu chưa có
+if [ ! -d "${SCRIPT_DIR}/backups" ]; then
+    echo "Creating backups directory..."
+    mkdir -p "${SCRIPT_DIR}/backups"
+fi
+
 if [ ! -d "${BACKUP_DIR}" ]; then
     echo "Creating backup directory: ${BACKUP_DIR}"
     mkdir -p "${BACKUP_DIR}"
@@ -43,7 +49,7 @@ fi
 
 # Copy snapshot data ra ngoài
 echo "Copying snapshot data..."
-if ! docker cp "${CONTAINER_NAME}:/var/lib/cassandra/data/${KEYSPACE}" "${BACKUP_DIR}/${SNAPSHOT_NAME}"; then
+if ! docker cp "${CONTAINER_NAME}:/var/lib/cassandra/data/${KEYSPACE}" "${BACKUP_DIR}/"; then
     echo "ERROR: Failed to copy snapshot data!"
     # Cleanup on failure
     docker exec "${CONTAINER_NAME}" nodetool clearsnapshot -t "${SNAPSHOT_NAME}"
@@ -52,7 +58,7 @@ fi
 
 # Tạo file metadata
 echo "Creating backup metadata..."
-cat > "${BACKUP_DIR}/${SNAPSHOT_NAME}/backup_info.txt" << EOF
+cat > "${BACKUP_DIR}/backup_info.txt" << EOF
 Backup Information
 ==================
 Date: $(date)
@@ -62,13 +68,20 @@ Snapshot Name: ${SNAPSHOT_NAME}
 Script Location: ${SCRIPT_DIR}
 EOF
 
+# Copy database schema
+echo "Copying database schema..."
+docker exec "${CONTAINER_NAME}" cqlsh -e "DESCRIBE KEYSPACE ${KEYSPACE};" > "${BACKUP_DIR}/schema.cql" 2>/dev/null || echo "Warning: Could not export schema"
+
 # Tạo file tar.gz
 echo "Creating compressed archive..."
-cd "${BACKUP_DIR}"
-tar -czf "${SNAPSHOT_NAME}.tar.gz" "${SNAPSHOT_NAME}/"
-if [ $? -eq 0 ]; then
+cd "${SCRIPT_DIR}/backups"
+if tar -czf "${SNAPSHOT_NAME}.tar.gz" "${SNAPSHOT_NAME}/"; then
     echo "Removing uncompressed backup..."
     rm -rf "${SNAPSHOT_NAME}"
+    BACKUP_FILE="${SNAPSHOT_NAME}.tar.gz"
+else
+    echo "Warning: Failed to create compressed archive. Backup will remain uncompressed."
+    BACKUP_FILE="${SNAPSHOT_NAME}"
 fi
 
 # Xóa snapshot trong container để tiết kiệm dung lượng
@@ -77,9 +90,13 @@ docker exec "${CONTAINER_NAME}" nodetool clearsnapshot -t "${SNAPSHOT_NAME}"
 
 echo "====================================="
 echo "Backup completed successfully!"
-echo "Backup location: ${BACKUP_DIR}/${SNAPSHOT_NAME}.tar.gz"
+echo "Backup location: ${SCRIPT_DIR}/backups/${BACKUP_FILE}"
 echo "====================================="
 
 # Hiển thị danh sách backup
 echo "Current backups:"
-ls -la "${BACKUP_DIR}"
+ls -la "${SCRIPT_DIR}/backups"
+
+echo ""
+echo "Backup process completed. Press Enter to continue..."
+read
