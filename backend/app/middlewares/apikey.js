@@ -11,7 +11,8 @@ import { Website } from "../models/Website.js";
 export async function validateApiKey(req, res, next) {
   try {
     console.log("=== API Key Validation Start ===");
-
+    console.log("Body: ", req.body);
+    // console.log("Kiểm tra header x-api-key: ", req.headers);
     // Lấy API key từ header
     const apiKey = req.headers["x-api-key"];
 

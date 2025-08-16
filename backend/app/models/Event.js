@@ -301,8 +301,17 @@ export class Event {
       this.validateRequiredFields();
 
       // Convert properties to Map for Cassandra
-      const propertiesMap = new Map(Object.entries(this.properties));
+      const propertiesMap = new Map(Object.entries(this.properties || {}));
 
+      const ensureString = (value) => {
+        if (value === null || value === undefined) {
+          return null;
+        }
+        if (typeof value === "object") {
+          return JSON.stringify(value);
+        }
+        return String(value);
+      };
       // 1. Lưu vào events table (partitioned by website_id and event_date)
       const eventsQuery = `
         INSERT INTO ${KEYSPACE}.events (
@@ -345,23 +354,23 @@ export class Event {
         this.visitor_id,
         this.user_id,
         this.session_id,
-        this.event_type,
-        this.event_name,
-        this.page_url,
-        this.page_title,
-        this.element_selector,
-        this.element_text,
+        ensureString(this.event_type),
+        ensureString(this.event_name),
+        ensureString(this.page_url),
+        ensureString(this.page_title),
+        ensureString(this.element_selector),
+        ensureString(this.element_text),
         propertiesMap,
-        this.device_type,
-        this.browser,
-        this.os,
-        this.ip_address,
-        this.country,
-        this.city,
-        this.referrer,
-        this.utm_source,
-        this.utm_medium,
-        this.utm_campaign,
+        ensureString(this.device_type),
+        ensureString(this.browser),
+        ensureString(this.os),
+        ensureString(this.ip_address),
+        ensureString(this.country),
+        ensureString(this.city),
+        ensureString(this.referrer),
+        ensureString(this.utm_source),
+        ensureString(this.utm_medium),
+        ensureString(this.utm_campaign),
       ];
 
       const eventsByUserParams = [
@@ -370,9 +379,9 @@ export class Event {
         this.event_time,
         this.event_id,
         this.session_id,
-        this.event_type,
-        this.event_name,
-        this.page_url,
+        ensureString(this.event_type),
+        ensureString(this.event_name),
+        ensureString(this.page_url),
         propertiesMap,
       ];
 
@@ -382,22 +391,22 @@ export class Event {
         this.event_time,
         this.event_id,
         this.visitor_id,
-        this.event_type,
-        this.event_name,
-        this.page_url,
+        ensureString(this.event_type),
+        ensureString(this.event_name),
+        ensureString(this.page_url),
         this.duration_since_start,
         propertiesMap,
       ];
 
       const eventsByTypeParams = [
         this.website_id,
-        this.event_type,
+        ensureString(this.event_type),
         this.event_date,
         this.event_time,
         this.event_id,
         this.visitor_id,
         this.session_id,
-        this.page_url,
+        ensureString(this.page_url),
         propertiesMap,
       ];
 

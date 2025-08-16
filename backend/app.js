@@ -13,7 +13,7 @@ const app = express();
 
 // Middleware
 app.use(cors());
-app.use(json());
+app.use(json({ limit: "10mb" }));
 app.use(urlencoded({ extended: true }));
 
 // Trust proxy for IP address

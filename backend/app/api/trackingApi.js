@@ -171,6 +171,7 @@ export async function collectBatchEvents(req, res) {
     }
 
     const { events } = req.body;
+    console.log("Received events:", req.body);
 
     if (!events || !Array.isArray(events) || events.length === 0) {
       return res.status(400).json({
