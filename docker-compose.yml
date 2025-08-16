@@ -1,9 +1,10 @@
 version: "3.8"
 
 services:
-  cassandra:
+  # Node 1 - Seed Node
+  cassandra-node1:
     image: cassandra:4.1
-    container_name: cassandra_user_logs
+    container_name: cassandra_node1
     ports:
       - "9042:9042" # CQL port only
     environment:
@@ -12,11 +13,66 @@ services:
       - CASSANDRA_RACK=rack1
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_NUM_TOKENS=128
+      - CASSANDRA_SEEDS=cassandra-node1
     volumes:
-      - cassandra_data:/var/lib/cassandra
+      - cassandra_data1:/var/lib/cassandra
       - ./cassandra/init:/docker-entrypoint-initdb.d
     networks:
       - cassandra_network
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 2m
+
+  # Node 2 - Join existing cluster
+  cassandra-node2:
+    image: cassandra:4.1
+    container_name: cassandra_node2
+    ports:
+      - "9043:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=UserLogCluster
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=128
+      - CASSANDRA_SEEDS=cassandra-node1
+    volumes:
+      - cassandra_data2:/var/lib/cassandra
+    networks:
+      - cassandra_network
+    depends_on:
+      cassandra-node1:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 2m
+
+  # Node 3 - Complete the 3-node cluster for RF=3
+  cassandra-node3:
+    image: cassandra:4.1
+    container_name: cassandra_node3
+    ports:
+      - "9044:9042"
+    environment:
+      - CASSANDRA_CLUSTER_NAME=UserLogCluster
+      - CASSANDRA_DC=datacenter1
+      - CASSANDRA_RACK=rack1
+      - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
+      - CASSANDRA_NUM_TOKENS=128
+      - CASSANDRA_SEEDS=cassandra-node1
+    volumes:
+      - cassandra_data3:/var/lib/cassandra
+    networks:
+      - cassandra_network
+    depends_on:
+      cassandra-node2:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster'"]
       interval: 30s
@@ -30,16 +86,18 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - CASSANDRA_HOST=cassandra
+      - CASSANDRA_HOST=cassandra-node1
       - CASSANDRA_PORT=9042
     depends_on:
-      cassandra:
+      cassandra-node1:
         condition: service_healthy
     networks:
       - cassandra_network
 
 volumes:
-  cassandra_data:
+  cassandra_data1:
+  cassandra_data2:
+  cassandra_data3:
 
 networks:
   cassandra_network:
