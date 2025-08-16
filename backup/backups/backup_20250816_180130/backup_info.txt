@@ -1,0 +1,13 @@
+Backup Information
+==================
+Date: 16/08/2025 18:01:43,26
+Container: cassandra_user_logs
+Keyspace: user_behavior_analytics
+Snapshot Name: backup_20250816_180130
+Script Location: D:\BTMONHOC\SĐH\DB enhance\Source\backup\
+Windows Version: 
+
+Microsoft Windows [Version 10.0.26100.4946]
+
+Docker Info:
+Client: 20.10.23 - Server: 20.10.23

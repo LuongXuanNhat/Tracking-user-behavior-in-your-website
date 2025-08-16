@@ -403,3 +403,4 @@ CREATE INDEX IF NOT EXISTS websites_api_key_idx ON websites (api_key);
 
 -- Show final schema
 DESCRIBE KEYSPACE user_behavior_analytics;
+
