@@ -230,11 +230,11 @@ class SocketService {
    */
   async broadcastNewEvent(websiteId, event) {
     try {
-      console.log(`🔔 Attempting to broadcast event for website: ${websiteId}`);
-      console.log(
-        `Current subscriptions:`,
-        Array.from(this.websiteSubscriptions.keys())
-      );
+      // console.log(`🔔 Attempting to broadcast event for website: ${websiteId}`);
+      // console.log(
+      //   `Current subscriptions:`,
+      //   Array.from(this.websiteSubscriptions.keys())
+      // );
 
       // Kiểm tra xem Socket.IO đã được khởi tạo chưa
       if (!this.io) {
@@ -295,14 +295,14 @@ class SocketService {
           );
 
           // Debug: List all connected users
-          console.log(
-            `📋 Connected users:`,
-            Array.from(this.connectedUsers.keys())
-          );
+          // console.log(
+          //   `📋 Connected users:`,
+          //   Array.from(this.connectedUsers.keys())
+          // );
 
           // Kiểm tra xem owner có đang online không
           const ownerConnection = this.connectedUsers.get(ownerId);
-          console.log(`🔍 Owner connection found:`, !!ownerConnection);
+          // console.log(`🔍 Owner connection found:`, !!ownerConnection);
 
           if (ownerConnection) {
             // Kiểm tra xem owner đã subscribe chưa để tránh duplicate
@@ -325,7 +325,7 @@ class SocketService {
               );
             }
           } else {
-            console.log(`ℹ️  Website owner (${ownerId}) is not online`);
+            // console.log(`ℹ️  Website owner (${ownerId}) is not online`);
           }
         } else {
           console.log(
@@ -344,7 +344,7 @@ class SocketService {
       );
 
       if (broadcastCount === 0) {
-        console.log(`⚠️  No active recipients found for website ${websiteId}`);
+        // console.log(`⚠️  No active recipients found for website ${websiteId}`);
       }
     } catch (error) {
       console.error("❌ Error broadcasting event:", error);

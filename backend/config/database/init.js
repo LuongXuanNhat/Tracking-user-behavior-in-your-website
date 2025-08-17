@@ -2,7 +2,7 @@
 // config/database/init.js
 // Cassandra database connection configuration
 import cassandra from "cassandra-driver";
-
+const { distance } = cassandra.types;
 // Export cassandra types for use in other modules
 export const { types } = cassandra;
 
@@ -22,29 +22,52 @@ class CassandraConnection {
         localDataCenter:
           process.env.CASSANDRA_LOCAL_DATA_CENTER || "datacenter1",
         // Don't specify keyspace initially to test basic connection
-
+        pooling: {
+          coreConnectionsPerHost: {
+            [distance.local]: 4, // Tăng từ 2 lên 4 để handle concurrent requests
+            [distance.remote]: 2,
+          },
+          maxConnectionsPerHost: {
+            [distance.local]: 8, // Giới hạn tối đa connections
+            [distance.remote]: 4,
+          },
+          maxRequestsPerConnection: 256, // Giảm xuống để tránh bottleneck
+          warmup: true, // Pre-warm connections
+        },
         // Basic protocol options
         protocolOptions: {
           port: 9042, // Direct port
         },
 
-        // Simplified socket options
+        // Optimized socket options for better performance
         socketOptions: {
-          connectTimeout: 5000, // 5 seconds connection timeout
-          readTimeout: 12000, // 12 seconds read timeout
+          connectTimeout: 3000, // Giảm connect timeout
+          readTimeout: 8000, // Giảm read timeout để fail fast
           keepAlive: true,
+          keepAliveDelay: 60000, // Keep alive packets mỗi 60s
+          tcpNoDelay: true, // Disable Nagle algorithm để giảm latency
         },
 
-        // Simplified query options
+        // Optimized query options
         queryOptions: {
-          consistency: cassandra.types.consistencies.localQuorum,
-          fetchSize: 1000,
+          consistency: cassandra.types.consistencies.localOne, // Fast consistency
+          fetchSize: 100, // Giảm fetch size để faster response
+          readTimeout: 6000, // 6s timeout thay vì 10s
           prepare: true,
+          autoPage: false, // Disable auto paging để control memory
         },
 
-        // Basic retry policy
+        // Advanced policies for better resilience
         policies: {
           retry: new cassandra.policies.retry.RetryPolicy(),
+          loadBalancing:
+            new cassandra.policies.loadBalancing.DCAwareRoundRobinPolicy(),
+          reconnection:
+            new cassandra.policies.reconnection.ExponentialReconnectionPolicy(
+              1000,
+              30000,
+              2
+            ),
         },
       };
 

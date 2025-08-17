@@ -4,8 +4,22 @@
 import cassandraConnection, { types } from "../../config/database/init.js";
 import { v4 as uuidv4 } from "uuid";
 import process from "process";
+import NodeCache from "node-cache";
 
 const KEYSPACE = process.env.CASSANDRA_KEYSPACE || "user_behavior_analytics";
+
+// Cache cho website với TTL = 5 phút và check period mỗi 2 phút
+const websiteCache = new NodeCache({
+  stdTTL: 300, // 5 phút
+  checkperiod: 120, // Check expired keys mỗi 2 phút
+  useClones: false, // Tránh deep clone, tăng performance
+});
+
+// Cache cho invalid website IDs (ngăn spam query)
+const invalidWebsiteCache = new NodeCache({
+  stdTTL: 60, // Cache invalid ID trong 1 phút
+  checkperiod: 30,
+});
 
 export class Website {
   constructor(data = {}) {
@@ -62,6 +76,8 @@ export class Website {
         settings: this.settings,
       });
       const client = await cassandraConnection.ensureConnection();
+
+      // Insert into main websites table
       const query = `
         INSERT INTO ${KEYSPACE}.websites (
           website_id, customer_id, name, domain, url, status,
@@ -103,6 +119,16 @@ export class Website {
 
       await client.execute(query, params, { prepare: true });
       console.log("Website created successfully!");
+
+      // Tự động thêm dữ liệu vào bảng api_key_websites (1 website = 1 record)
+      await this._insertApiKeyWebsites(client);
+
+      // Thêm vào cache sau khi tạo thành công
+      if (this.status === "active") {
+        const websiteIdStr = this.website_id?.toString() || this.website_id;
+        websiteCache.set(websiteIdStr, this);
+      }
+
       return this;
     } catch (error) {
       console.error("Failed to save website to Cassandra:", error);
@@ -128,20 +154,69 @@ export class Website {
   }
 
   /**
-   * Tìm website theo ID
+   * Tìm website theo ID với cache optimization
    */
   static async findById(website_id) {
     try {
+      if (!website_id) {
+        return null;
+      }
+
+      // Đảm bảo website_id là string
+      const websiteIdStr = website_id?.toString() || website_id;
+
+      // 1. Check invalid cache trước (tránh spam query)
+      if (invalidWebsiteCache.get(websiteIdStr)) {
+        return null;
+      }
+
+      // 2. Check valid cache
+      let website = websiteCache.get(websiteIdStr);
+      if (website) {
+        // Kiểm tra lại status từ cache (có thể đã bị suspend)
+        if (website.status !== "active") {
+          // Remove khỏi cache nếu không active
+          websiteCache.del(websiteIdStr);
+          return null;
+        }
+        return website;
+      }
+
+      // 3. Query database (chỉ khi cache miss)
+      console.log(`Cache miss for website ID: ${websiteIdStr}`);
+
       const client = cassandraConnection.getClient();
       const query = `SELECT * FROM ${KEYSPACE}.websites WHERE website_id = ?`;
       const result = await client.execute(query, [website_id], {
         prepare: true,
+        readTimeout: 10000, // 10 second timeout thay vì default 12s
+        consistency: types.consistencies.localOne, // Faster consistency
       });
 
-      if (result.rows.length === 0) return null;
-      return new Website(result.rows[0]);
+      if (result.rows.length === 0) {
+        // Cache invalid website ID để tránh spam
+        invalidWebsiteCache.set(websiteIdStr, true);
+        return null;
+      }
+
+      website = new Website(result.rows[0]);
+
+      // 4. Cache valid website (chỉ khi status active)
+      if (website.status === "active") {
+        websiteCache.set(websiteIdStr, website);
+      }
+
+      return website;
     } catch (error) {
       console.error("Error finding website by id:", error);
+
+      // Log chi tiết để debug
+      if (error.name === "OperationTimedOutError") {
+        console.error(
+          "Database timeout for website ID query - consider connection pooling optimization"
+        );
+      }
+
       throw error;
     }
   }
@@ -167,20 +242,33 @@ export class Website {
   }
 
   /**
-   * Tìm website theo API key
+   * Tìm website theo API key - OPTIMIZED VERSION
    */
   static async findByApiKey(apiKey) {
     try {
       const client = await cassandraConnection.ensureConnection();
-      const query = `SELECT * FROM ${KEYSPACE}.websites WHERE api_key = ? ALLOW FILTERING`;
+
+      // Sử dụng table tối ưu thay vì ALLOW FILTERING
+      const query = `SELECT * FROM ${KEYSPACE}.api_key_websites WHERE api_key = ?`;
       const result = await client.execute(query, [apiKey], {
         prepare: true,
-        readTimeout: 10000, // 10 second timeout thay vì default 12s
-        consistency: types.consistencies.localOne, // Faster consistency
+        readTimeout: 5000, // Giảm timeout xuống 5s vì query nhanh hơn
+        consistency: types.consistencies.localOne, // Fast consistency
       });
 
       if (result.rows.length === 0) return null;
-      return new Website(result.rows[0]);
+
+      const website = new Website(result.rows[0]);
+
+      // Cache website nếu status active
+      if (website.status === "active") {
+        // Đảm bảo website_id là string trước khi cache
+        const websiteIdStr =
+          website.website_id?.toString() || website.website_id;
+        websiteCache.set(websiteIdStr, website);
+      }
+
+      return website;
     } catch (error) {
       console.error("Error finding website by api key:", error);
       throw error;
@@ -245,6 +333,11 @@ export class Website {
       )} WHERE website_id = ?`;
       await client.execute(query, values, { prepare: true });
 
+      // Cập nhật cache sau khi update thành công
+      const websiteIdStr = this.website_id?.toString() || this.website_id;
+      websiteCache.set(websiteIdStr, this);
+      invalidWebsiteCache.del(websiteIdStr);
+
       return this;
     } catch (error) {
       console.error("Error updating website:", error);
@@ -258,8 +351,19 @@ export class Website {
   async delete() {
     try {
       const client = cassandraConnection.getClient();
+
+      // Trước khi xóa, xóa record khỏi bảng api_key_websites
+      await this._deleteApiKeyWebsites(client);
+
+      // Xóa website chính
       const query = `DELETE FROM ${KEYSPACE}.websites WHERE website_id = ?`;
       await client.execute(query, [this.website_id], { prepare: true });
+
+      // Xóa khỏi cache sau khi delete thành công
+      const websiteIdStr = this.website_id?.toString() || this.website_id;
+      websiteCache.del(websiteIdStr);
+      invalidWebsiteCache.del(websiteIdStr);
+
       return true;
     } catch (error) {
       console.error("Error deleting website:", error);
@@ -327,6 +431,212 @@ export class Website {
       return { total, active, byType };
     } catch (error) {
       console.error("Error getting stats:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Utility functions để quản lý cache
+   */
+  static get cacheUtils() {
+    return {
+      // Clear cache cho một website ID cụ thể
+      clearCache: (websiteId) => {
+        const websiteIdStr = websiteId?.toString() || websiteId;
+        websiteCache.del(websiteIdStr);
+        invalidWebsiteCache.del(websiteIdStr);
+      },
+
+      // Clear toàn bộ cache
+      clearAllCache: () => {
+        websiteCache.flushAll();
+        invalidWebsiteCache.flushAll();
+      },
+
+      // Lấy thống kê cache
+      getCacheStats: () => ({
+        validCache: {
+          keys: websiteCache.keys().length,
+          stats: websiteCache.getStats(),
+        },
+        invalidCache: {
+          keys: invalidWebsiteCache.keys().length,
+          stats: invalidWebsiteCache.getStats(),
+        },
+      }),
+
+      // Pre-warm cache (có thể dùng khi startup)
+      preWarmCache: async (websiteIds = []) => {
+        console.log(
+          `Pre-warming cache for ${websiteIds.length} website IDs...`
+        );
+        const promises = websiteIds.map(async (websiteId) => {
+          try {
+            const websiteIdStr = websiteId?.toString() || websiteId;
+            const client = cassandraConnection.getClient();
+            const query = `SELECT * FROM ${KEYSPACE}.websites WHERE website_id = ?`;
+            const result = await client.execute(query, [websiteId], {
+              prepare: true,
+              readTimeout: 10000,
+              consistency: types.consistencies.localOne,
+            });
+
+            if (result.rows.length > 0) {
+              const website = new Website(result.rows[0]);
+              if (website.status === "active") {
+                websiteCache.set(websiteIdStr, website);
+              }
+            }
+          } catch (error) {
+            console.error(
+              `Failed to pre-warm cache for website ID: ${websiteId}`,
+              error
+            );
+          }
+        });
+
+        await Promise.allSettled(promises);
+        console.log("Website cache pre-warming completed");
+      },
+
+      // Refresh cache cho một website cụ thể
+      refreshCache: async (websiteId) => {
+        try {
+          const websiteIdStr = websiteId?.toString() || websiteId;
+          websiteCache.del(websiteIdStr);
+          invalidWebsiteCache.del(websiteIdStr);
+
+          const website = await Website.findById(websiteId);
+          return website;
+        } catch (error) {
+          console.error(
+            `Failed to refresh cache for website ID: ${websiteId}`,
+            error
+          );
+          throw error;
+        }
+      },
+    };
+  }
+
+  /**
+   * Helper method: Thêm dữ liệu vào bảng api_key_websites
+   * Mỗi website chỉ có 1 record duy nhất với api_key là string
+   * @private
+   */
+  async _insertApiKeyWebsites(client) {
+    try {
+      // Convert api_key Set thành string để lưu vào api_key_websites
+      let apiKeyString = "";
+
+      if (this.api_key instanceof Set) {
+        // Nếu là Set, lấy phần tử đầu tiên hoặc join thành string
+        const apiKeyArray = Array.from(this.api_key);
+        apiKeyString = apiKeyArray.length > 0 ? apiKeyArray[0] : "";
+      } else if (Array.isArray(this.api_key)) {
+        // Nếu là Array, lấy phần tử đầu tiên
+        apiKeyString = this.api_key.length > 0 ? this.api_key[0] : "";
+      } else if (typeof this.api_key === "string") {
+        // Nếu đã là string
+        apiKeyString = this.api_key.trim();
+      } else {
+        console.log("No valid API key to insert into api_key_websites table");
+        return;
+      }
+
+      // Kiểm tra nếu không có API key thì không insert
+      if (!apiKeyString) {
+        console.log("No API key to insert into api_key_websites table");
+        return;
+      }
+
+      console.log(`Inserting website with API key: "${apiKeyString}"`);
+
+      const apiKeyWebsiteQuery = `
+        INSERT INTO ${KEYSPACE}.api_key_websites (
+          api_key, website_id, customer_id, name, domain, url, status,
+          settings, created_at, updated_at, last_activity
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+
+      // Convert settings object to Map for Cassandra
+      const settingsMap =
+        this.settings &&
+        typeof this.settings === "object" &&
+        !Array.isArray(this.settings)
+          ? new Map(Object.entries(this.settings))
+          : new Map([
+              ["auto_tracking", "true"],
+              ["anonymize_ips", "false"],
+              ["cookie_consent", "false"],
+              ["session_timeout", "30"],
+            ]);
+
+      const apiKeyParams = [
+        apiKeyString, // api_key (TEXT PRIMARY KEY) - chỉ 1 string
+        this.website_id, // website_id (UUID)
+        this.customer_id, // customer_id (UUID)
+        this.name, // name (TEXT)
+        this.domain, // domain (TEXT)
+        this.url, // url (TEXT)
+        this.status, // status (TEXT)
+        settingsMap, // settings (MAP<TEXT, TEXT>)
+        this.created_at, // created_at (TIMESTAMP)
+        this.updated_at, // updated_at (TIMESTAMP)
+        this.last_activity, // last_activity (TIMESTAMP)
+      ];
+
+      // Insert 1 record duy nhất cho website này
+      await client.execute(apiKeyWebsiteQuery, apiKeyParams, { prepare: true });
+
+      console.log(
+        `Successfully inserted 1 record for website ${this.website_id} with API key: ${apiKeyString}`
+      );
+    } catch (error) {
+      console.error("Error inserting into api_key_websites:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Helper method: Xóa dữ liệu khỏi bảng api_key_websites
+   * Xóa record duy nhất của website này
+   * @private
+   */
+  async _deleteApiKeyWebsites(client) {
+    try {
+      // Convert api_key Set thành string
+      let apiKeyString = "";
+
+      if (this.api_key instanceof Set) {
+        const apiKeyArray = Array.from(this.api_key);
+        apiKeyString = apiKeyArray.length > 0 ? apiKeyArray[0] : "";
+      } else if (Array.isArray(this.api_key)) {
+        apiKeyString = this.api_key.length > 0 ? this.api_key[0] : "";
+      } else if (typeof this.api_key === "string") {
+        apiKeyString = this.api_key.trim();
+      } else {
+        console.log("No valid API key to delete from api_key_websites table");
+        return;
+      }
+
+      if (!apiKeyString) {
+        console.log("No API key to delete from api_key_websites table");
+        return;
+      }
+
+      const deleteApiKeyQuery = `DELETE FROM ${KEYSPACE}.api_key_websites WHERE api_key = ?`;
+
+      // Xóa 1 record duy nhất
+      await client.execute(deleteApiKeyQuery, [apiKeyString], {
+        prepare: true,
+      });
+
+      console.log(
+        `Successfully deleted 1 record for API key: ${apiKeyString} from api_key_websites table`
+      );
+    } catch (error) {
+      console.error("Error deleting from api_key_websites:", error);
       throw error;
     }
   }

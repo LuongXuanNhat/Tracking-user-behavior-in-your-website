@@ -131,7 +131,7 @@ export async function collectEvent(req, res) {
     // if (website.updateLastActivity) {
     //   await website.updateLastActivity();
     // }
-
+    console.log(`\n✅ Event collected successfully\n`);
     res.status(201).json({
       success: true,
       message: "Event đã được ghi nhận",
@@ -171,7 +171,7 @@ export async function collectBatchEvents(req, res) {
     }
 
     const { events } = req.body;
-    console.log("Received events:", req.body);
+    // console.log("Received events:", req.body);
 
     if (!events || !Array.isArray(events) || events.length === 0) {
       return res.status(400).json({
@@ -285,6 +285,7 @@ export async function collectBatchEvents(req, res) {
       }
     }
 
+    console.log(`\n✅ Event collected successfully\n`);
     res.status(201).json({
       success: true,
       message: `${createdEvents.length}/${events.length} events đã được ghi nhận`,

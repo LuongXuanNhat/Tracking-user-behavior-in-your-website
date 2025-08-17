@@ -31,6 +31,7 @@
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
+    "node-cache": "^5.1.2",
     "socket.io": "^4.8.1",
     "uuid": "^11.1.0"
   },

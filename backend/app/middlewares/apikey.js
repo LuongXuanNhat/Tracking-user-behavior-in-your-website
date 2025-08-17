@@ -1,22 +1,67 @@
 /* eslint-disable no-undef */
 // middlewares/apikey.js
-// Middleware kiểm tra API Key động từ database
-
-// import { ApiKey } from "../models/ApiKey.js";
+import NodeCache from "node-cache";
 import { Website } from "../models/Website.js";
 
+// Cache với TTL = 5 phút và check period mỗi 2 phút
+const apiKeyCache = new NodeCache({
+  stdTTL: 300, // 5 phút
+  checkperiod: 120, // Check expired keys mỗi 2 phút
+  useClones: false, // Tránh deep clone, tăng performance
+});
+
+// Cache cho invalid API keys (ngăn spam attack)
+const invalidKeyCache = new NodeCache({
+  stdTTL: 60, // Cache invalid key trong 1 phút
+  checkperiod: 30,
+});
+
+// Circuit breaker để ngăn database overload
+let circuitBreakerState = {
+  failures: 0,
+  lastFailureTime: null,
+  isOpen: false,
+  threshold: 5, // Số lỗi liên tiếp để mở circuit
+  timeout: 30000, // 30s timeout khi circuit mở
+};
+
+function resetCircuitBreaker() {
+  circuitBreakerState.failures = 0;
+  circuitBreakerState.isOpen = false;
+  circuitBreakerState.lastFailureTime = null;
+}
+
+function tripCircuitBreaker() {
+  circuitBreakerState.failures++;
+  circuitBreakerState.lastFailureTime = Date.now();
+
+  if (circuitBreakerState.failures >= circuitBreakerState.threshold) {
+    circuitBreakerState.isOpen = true;
+    console.warn(
+      `🔥 Circuit breaker OPENED after ${circuitBreakerState.failures} failures`
+    );
+  }
+}
+
+function shouldAllowRequest() {
+  if (!circuitBreakerState.isOpen) return true;
+
+  const timeSinceLastFailure = Date.now() - circuitBreakerState.lastFailureTime;
+  if (timeSinceLastFailure > circuitBreakerState.timeout) {
+    console.log("🔄 Circuit breaker attempting half-open state");
+    return true; // Try half-open state
+  }
+
+  return false;
+}
+
 /**
- * Middleware kiểm tra API Key động
+ * Middleware kiểm tra API Key với cache optimization
  */
 export async function validateApiKey(req, res, next) {
   try {
-    console.log("=== API Key Validation Start ===");
-    console.log("Body: ", req.body);
-    // console.log("Kiểm tra header x-api-key: ", req.headers);
-    // Lấy API key từ header
     const apiKey = req.headers["x-api-key"];
 
-    // Nếu bắt buộc nhưng không có API key
     if (!apiKey) {
       return res.status(401).json({
         status: "error",
@@ -25,24 +70,66 @@ export async function validateApiKey(req, res, next) {
       });
     }
 
-    if (
-      apiKey === process.env.DEMO_API_KEY ||
-      apiKey === process.env.TEST_API_KEY ||
-      apiKey === process.env.PRODUCTION_API_KEY
-    ) {
-      console.log("API key matched environment variable");
+    // 1. Check environment keys (cao nhất)
+    const envKeys = [
+      process.env.DEMO_API_KEY,
+      process.env.TEST_API_KEY,
+      process.env.PRODUCTION_API_KEY,
+    ];
+
+    if (envKeys.includes(apiKey)) {
       req.apiKeyValidated = true;
       req.apiKeySource = "environment";
       return next();
     }
 
-    console.log("Checking database...");
-    // Xác thực API key từ database
-    const websiteExists = await Website.existsByApiKey(apiKey);
-    console.log("Website exists in DB:", websiteExists);
+    // 2. Check invalid key cache trước (tránh spam)
+    if (invalidKeyCache.get(apiKey)) {
+      return res.status(401).json({
+        status: "error",
+        message: "Invalid API key",
+      });
+    }
 
-    if (!websiteExists) {
-      console.log("Invalid API key");
+    // 3. Check valid cache
+    let website = apiKeyCache.get(apiKey);
+    if (website) {
+      // Kiểm tra lại status từ cache (có thể đã bị suspend)
+      if (website.status !== "active") {
+        // Remove khỏi cache nếu không active
+        apiKeyCache.del(apiKey);
+        return res.status(403).json({
+          status: "error",
+          message: "Website access suspended",
+          error: `Website status is ${website.status}`,
+        });
+      }
+
+      req.website = website;
+      req.apiKeyValidated = true;
+      req.apiKeySource = "cache";
+      return next();
+    }
+
+    // 4. Query database với circuit breaker protection
+    if (!shouldAllowRequest()) {
+      console.warn("🔥 Circuit breaker is OPEN - rejecting request");
+      return res.status(503).json({
+        status: "error",
+        message: "Service temporarily unavailable",
+        error: "Database circuit breaker is open",
+      });
+    }
+
+    console.log(`Cache miss for API key: ${apiKey.substring(0, 8)}...`);
+
+    // Tối ưu: chỉ gọi 1 query thay vì 2 queries
+    website = await Website.findByApiKey(apiKey);
+
+    if (!website) {
+      tripCircuitBreaker(); // Record failure
+      // Cache invalid key để tránh spam
+      invalidKeyCache.set(apiKey, true);
       return res.status(401).json({
         status: "error",
         message: "Invalid API key",
@@ -50,23 +137,15 @@ export async function validateApiKey(req, res, next) {
       });
     }
 
-    // Lấy thông tin website tương ứng với API key
-    console.log("Fetching website details...");
-    const website = await Website.findByApiKey(apiKey);
-
-    if (!website) {
-      console.log("Website not found");
-      return res.status(401).json({
-        status: "error",
-        message: "Website not found",
-        error: "No website associated with this API key",
-      });
+    // Success - reset circuit breaker if it was in failure state
+    if (circuitBreakerState.failures > 0) {
+      resetCircuitBreaker();
+      console.log("✅ Circuit breaker reset after successful request");
     }
 
-    // Kiểm tra trạng thái website
-    console.log("Website status:", website.status);
+    // Check website status
     if (website.status !== "active") {
-      console.log("Website not active");
+      // Không cache inactive website
       return res.status(403).json({
         status: "error",
         message: "Website access suspended",
@@ -74,18 +153,105 @@ export async function validateApiKey(req, res, next) {
       });
     }
 
-    console.log("API key validation successful");
+    // 5. Cache valid website
+    apiKeyCache.set(apiKey, website);
+
     req.website = website;
     req.apiKeyValidated = true;
     req.apiKeySource = "database";
-    console.log("=== API Key Validation End ===");
+
     next();
   } catch (error) {
     console.error("API key validation error:", error);
+
+    // Trip circuit breaker on database errors
+    if (
+      error.name === "OperationTimedOutError" ||
+      error.name === "NoHostAvailableError" ||
+      error.message.includes("timeout")
+    ) {
+      tripCircuitBreaker();
+      console.error(
+        `🔥 Circuit breaker failure count: ${circuitBreakerState.failures}`
+      );
+    }
+
+    // Log chi tiết để debug
+    if (error.name === "OperationTimedOutError") {
+      console.error(
+        "Database timeout - consider connection pooling optimization"
+      );
+    }
+
     res.status(500).json({
       status: "error",
       message: "API key validation error",
-      error: error.message,
+      error:
+        process.env.NODE_ENV === "development"
+          ? error.message
+          : "Internal server error",
     });
   }
 }
+
+/**
+ * Utility functions để quản lý cache
+ */
+export const apiKeyMiddlewareUtils = {
+  // Clear cache cho một API key cụ thể
+  clearCache: (apiKey) => {
+    apiKeyCache.del(apiKey);
+    invalidKeyCache.del(apiKey);
+  },
+
+  // Clear toàn bộ cache
+  clearAllCache: () => {
+    apiKeyCache.flushAll();
+    invalidKeyCache.flushAll();
+  },
+
+  // Lấy thống kê cache
+  getCacheStats: () => ({
+    validCache: {
+      keys: apiKeyCache.keys().length,
+      stats: apiKeyCache.getStats(),
+    },
+    invalidCache: {
+      keys: invalidKeyCache.keys().length,
+      stats: invalidKeyCache.getStats(),
+    },
+  }),
+
+  // Pre-warm cache (có thể dùng khi startup)
+  preWarmCache: async (apiKeys = []) => {
+    console.log(`Pre-warming cache for ${apiKeys.length} API keys...`);
+    const promises = apiKeys.map(async (apiKey) => {
+      try {
+        const website = await Website.findByApiKey(apiKey);
+        if (website && website.status === "active") {
+          apiKeyCache.set(apiKey, website);
+        }
+      } catch (error) {
+        console.error(`Failed to pre-warm cache for key: ${apiKey}`, error);
+      }
+    });
+
+    await Promise.allSettled(promises);
+    console.log("Cache pre-warming completed");
+  },
+
+  // Reset circuit breaker manually
+  resetCircuitBreaker: () => {
+    resetCircuitBreaker();
+    console.log("🔄 Circuit breaker manually reset");
+  },
+
+  // Get circuit breaker status
+  getCircuitBreakerStatus: () => ({
+    isOpen: circuitBreakerState.isOpen,
+    failures: circuitBreakerState.failures,
+    lastFailureTime: circuitBreakerState.lastFailureTime,
+    threshold: circuitBreakerState.threshold,
+    timeout: circuitBreakerState.timeout,
+  }),
+};
