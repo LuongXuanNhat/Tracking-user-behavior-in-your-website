@@ -1,6 +1,13 @@
 USE user_behavior_analytics;
 
 DROP TABLE IF EXISTS websites;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS events_by_user;
+DROP TABLE IF EXISTS events;
+DROP TABLE IF EXISTS events;
+
+
+DROP TABLE IF EXISTS sessions;
 
 -- hoặc tạo lại bảng:
 CREATE TABLE IF NOT EXISTS websites (

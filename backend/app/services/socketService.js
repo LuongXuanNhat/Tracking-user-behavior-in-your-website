@@ -61,8 +61,14 @@ class SocketService {
         }
 
         // Attach customer to socket
-        socket.userId = customer.customer_id;
+        socket.userId = customer.customer_id.toString(); // Đảm bảo convert thành string
         socket.userEmail = customer.email;
+
+        console.log(
+          `🔐 Socket authenticated - Customer ID: ${
+            socket.userId
+          } (type: ${typeof socket.userId}), Email: ${customer.email}`
+        );
 
         next();
       } catch (error) {
@@ -86,6 +92,11 @@ class SocketService {
         socketId: socket.id,
         websites: [],
       });
+
+      console.log(
+        `🔌 User connected - ID: ${socket.userId}, Socket: ${socket.id}`
+      );
+      console.log(`📊 Total connected users: ${this.connectedUsers.size}`);
 
       // Handle website subscription
       socket.on("subscribe_website", async (websiteId) => {
@@ -169,7 +180,9 @@ class SocketService {
 
       // Handle disconnect
       socket.on("disconnect", () => {
-        console.log(`User ${socket.userEmail} disconnected`);
+        console.log(
+          `👋 User ${socket.userEmail} (${socket.userId}) disconnected`
+        );
 
         // Clean up user connection
         const userConnection = this.connectedUsers.get(socket.userId);
@@ -188,6 +201,10 @@ class SocketService {
         }
 
         this.connectedUsers.delete(socket.userId);
+
+        console.log(
+          `📊 Remaining connected users: ${this.connectedUsers.size}`
+        );
       });
     });
   }
@@ -200,7 +217,7 @@ class SocketService {
       // Get customer's websites using customer_id
       const websites = await Website.findByCustomerId(customerId);
       return websites.some(
-        (website) => website.website_id.toString() === websiteId
+        (website) => website.website_id.toString() === websiteId.toString()
       );
     } catch (error) {
       console.error("Error checking website access:", error);
@@ -272,11 +289,21 @@ class SocketService {
       try {
         const website = await Website.findById(websiteId);
         if (website && website.customer_id) {
-          const ownerId = website.customer_id;
-          console.log(`👤 Website owner ID: ${ownerId}`);
+          const ownerId = website.customer_id.toString(); // Đảm bảo convert thành string
+          console.log(
+            `👤 Website owner ID: ${ownerId} (type: ${typeof ownerId})`
+          );
+
+          // Debug: List all connected users
+          console.log(
+            `📋 Connected users:`,
+            Array.from(this.connectedUsers.keys())
+          );
 
           // Kiểm tra xem owner có đang online không
           const ownerConnection = this.connectedUsers.get(ownerId);
+          console.log(`🔍 Owner connection found:`, !!ownerConnection);
+
           if (ownerConnection) {
             // Kiểm tra xem owner đã subscribe chưa để tránh duplicate
             const isAlreadySubscribed =

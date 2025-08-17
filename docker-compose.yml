@@ -19,15 +19,20 @@ services:
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_NUM_TOKENS=256
       - CASSANDRA_SEEDS=cassandra-node1
-      - MAX_HEAP_SIZE=1G
-      - HEAP_NEWSIZE=256M
-      - CASSANDRA_CONCURRENT_READS=16
-      - CASSANDRA_CONCURRENT_WRITES=16
-      - CASSANDRA_CONCURRENT_COUNTER_WRITES=16
+      - MAX_HEAP_SIZE=1024M # Tăng heap size
+      - HEAP_NEWSIZE=256M # Tăng new generation heap
+      - CASSANDRA_CONCURRENT_READS=32 # Tăng concurrent reads
+      - CASSANDRA_CONCURRENT_WRITES=32 # Tăng concurrent writes
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=32 # Tăng counter writes
       - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
-      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=2
-      - CASSANDRA_CONCURRENT_COMPACTORS=2
-      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=32
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=4 # Tăng flush writers
+      - CASSANDRA_CONCURRENT_COMPACTORS=4 # Tăng compactors
+      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=64 # Tăng compaction throughput
+      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=30000 # Tăng read timeout
+      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=20000 # Tăng write timeout
+      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=15000
+      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=60000 # Tăng range request timeout
+      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=60000 # Tăng general request timeout
     volumes:
       - cassandra_node1_data:/var/lib/cassandra
       - ./cassandra/init:/docker-entrypoint-initdb.d
@@ -60,14 +65,20 @@ services:
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_NUM_TOKENS=256
       - CASSANDRA_SEEDS=cassandra-node1
-      - MAX_HEAP_SIZE=1G
-      - HEAP_NEWSIZE=256M
-      - CASSANDRA_CONCURRENT_READS=16
-      - CASSANDRA_CONCURRENT_WRITES=16
-      - CASSANDRA_CONCURRENT_COUNTER_WRITES=16
+      - MAX_HEAP_SIZE=1024M # Tăng heap size
+      - HEAP_NEWSIZE=256M # Tăng new generation heap
+      - CASSANDRA_CONCURRENT_READS=32 # Tăng concurrent reads
+      - CASSANDRA_CONCURRENT_WRITES=32 # Tăng concurrent writes
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=32 # Tăng counter writes
       - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
-      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=2
-      - CASSANDRA_CONCURRENT_COMPACTORS=2
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=4 # Tăng flush writers
+      - CASSANDRA_CONCURRENT_COMPACTORS=4 # Tăng compactors
+      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=64 # Tăng compaction throughput
+      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=30000 # Tăng read timeout
+      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=20000 # Tăng write timeout
+      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=15000
+      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=60000 # Tăng range request timeout
+      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=60000 # Tăng general request timeout
       - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=32
     volumes:
       - cassandra_node2_data:/var/lib/cassandra
@@ -103,10 +114,20 @@ services:
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_NUM_TOKENS=256
       - CASSANDRA_SEEDS=cassandra-node1
-      - MAX_HEAP_SIZE=1G
-      - HEAP_NEWSIZE=256M
-      - CASSANDRA_CONCURRENT_READS=16
-      - CASSANDRA_CONCURRENT_WRITES=16
+      - MAX_HEAP_SIZE=1024M # Tăng heap size
+      - HEAP_NEWSIZE=256M # Tăng new generation heap
+      - CASSANDRA_CONCURRENT_READS=32 # Tăng concurrent reads
+      - CASSANDRA_CONCURRENT_WRITES=32 # Tăng concurrent writes
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=32 # Tăng counter writes
+      - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=4 # Tăng flush writers
+      - CASSANDRA_CONCURRENT_COMPACTORS=4 # Tăng compactors
+      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=64 # Tăng compaction throughput
+      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=30000 # Tăng read timeout
+      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=20000 # Tăng write timeout
+      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=15000
+      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=60000 # Tăng range request timeout
+      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=60000 # Tăng general request timeout
       - CASSANDRA_CONCURRENT_COUNTER_WRITES=16
       - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
       - CASSANDRA_MEMTABLE_FLUSH_WRITERS=2
@@ -138,7 +159,7 @@ services:
     image: ipushc/cassandra-web
     container_name: cassandra_web_ui
     ports:
-      - "3001:3000"
+      - "3010:8083"
     environment:
       - CASSANDRA_HOST=cassandra-node1
       - CASSANDRA_PORT=9042
@@ -156,7 +177,11 @@ services:
     image: haproxy:2.8
     container_name: cassandra_load_balancer
     ports:
-      - "9142:9142" # Load balanced CQL port
+      - "9142:9142" # Load balanced CQL port (primary)
+      - "9143:9143" # Read-only CQL port (analytics)
+      - "9144:9144" # Disaster recovery CQL port
+      - "8404:8404" # HAProxy stats
+      - "8405:8405" # Health check
     volumes:
       - ./load-balancer/haproxy.cfg:/usr/local/etc/haproxy/haproxy.cfg
     depends_on:

@@ -3,7 +3,7 @@
 // Tái cấu trúc theo schema database.cql
 
 import cassandraConnection from "../../config/database/init.js";
-import { v4 as uuidv4 } from "uuid";
+import { v4 as uuidv4, v1 as uuidv1 } from "uuid";
 import process from "process";
 
 const KEYSPACE = process.env.CASSANDRA_KEYSPACE || "user_behavior_analytics";
@@ -11,7 +11,7 @@ const KEYSPACE = process.env.CASSANDRA_KEYSPACE || "user_behavior_analytics";
 export class Event {
   constructor(data = {}) {
     // Core identifiers
-    this.event_id = data.event_id || uuidv4();
+    this.event_id = data.event_id || uuidv1(); // TIMEUUID for time-ordered queries
     this.website_id = this.validateUUID(data.website_id, "website_id");
     this.visitor_id = this.validateUUID(data.visitor_id, "visitor_id");
     this.user_id = data.user_id
@@ -260,7 +260,7 @@ export class Event {
   }
 
   /**
-   * Validate UUID format
+   * Validate UUID format - now supports both UUID v4 and TIMEUUID (v1)
    */
   validateUUID(uuid, fieldName) {
     if (!uuid) {
@@ -269,7 +269,7 @@ export class Event {
       );
     }
     const uuidStr = uuid.toString?.();
-    // Check if it's already a valid UUID format
+    // Check if it's already a valid UUID format (v1 or v4)
     const uuidRegex =
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -280,7 +280,9 @@ export class Event {
     console.warn(
       `Invalid UUID format for ${fieldName}: ${uuid}, generating new UUID`
     );
-    return uuidv4();
+
+    // For event_id, generate TIMEUUID (v1), for others use regular UUID (v4)
+    return fieldName === "event_id" ? uuidv1() : uuidv4();
   }
 
   /**
@@ -295,7 +297,7 @@ export class Event {
    */
   async create() {
     try {
-      const client = cassandraConnection.getClient();
+      const client = await cassandraConnection.ensureConnection();
 
       // Validate required fields before saving
       this.validateRequiredFields();
@@ -325,9 +327,9 @@ export class Event {
       // 2. Lưu vào events_by_user table (partitioned by website_id and visitor_id)
       const eventsByUserQuery = `
         INSERT INTO ${KEYSPACE}.events_by_user (
-          website_id, visitor_id, event_time, event_id, session_id,
+          website_id, visitor_id, event_date, event_time, event_id, session_id,
           event_type, event_name, page_url, properties
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
 
       // 3. Lưu vào events_by_session table (partitioned by website_id and session_id)
@@ -376,6 +378,7 @@ export class Event {
       const eventsByUserParams = [
         this.website_id,
         this.visitor_id,
+        this.event_date,
         this.event_time,
         this.event_id,
         this.session_id,
@@ -448,6 +451,7 @@ export class Event {
       // Ensure required UUIDs are provided or generated
       const safeData = {
         ...data,
+        event_id: data.event_id || uuidv1(), // TIMEUUID for event_id
         website_id: data.website_id || uuidv4(),
         visitor_id: data.visitor_id || uuidv4(),
         session_id: data.session_id || uuidv4(),

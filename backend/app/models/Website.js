@@ -1,7 +1,7 @@
 // models/Website.js
 // Model để quản lý websites với Cassandra integration
 
-import cassandraConnection from "../../config/database/init.js";
+import cassandraConnection, { types } from "../../config/database/init.js";
 import { v4 as uuidv4 } from "uuid";
 import process from "process";
 
@@ -61,7 +61,7 @@ export class Website {
         customer_id: this.customer_id,
         settings: this.settings,
       });
-      const client = cassandraConnection.getClient();
+      const client = await cassandraConnection.ensureConnection();
       const query = `
         INSERT INTO ${KEYSPACE}.websites (
           website_id, customer_id, name, domain, url, status,
@@ -151,10 +151,12 @@ export class Website {
    */
   static async existsByApiKey(apiKey) {
     try {
-      const client = cassandraConnection.getClient();
+      const client = await cassandraConnection.ensureConnection();
       const query = `SELECT website_id FROM ${KEYSPACE}.websites WHERE api_key = ? ALLOW FILTERING`;
       const result = await client.execute(query, [apiKey], {
         prepare: true,
+        readTimeout: 10000, // 10 second timeout thay vì default 12s
+        consistency: types.consistencies.localOne, // Faster consistency
       });
 
       return result.rows.length > 0;
@@ -169,10 +171,12 @@ export class Website {
    */
   static async findByApiKey(apiKey) {
     try {
-      const client = cassandraConnection.getClient();
+      const client = await cassandraConnection.ensureConnection();
       const query = `SELECT * FROM ${KEYSPACE}.websites WHERE api_key = ? ALLOW FILTERING`;
       const result = await client.execute(query, [apiKey], {
         prepare: true,
+        readTimeout: 10000, // 10 second timeout thay vì default 12s
+        consistency: types.consistencies.localOne, // Faster consistency
       });
 
       if (result.rows.length === 0) return null;

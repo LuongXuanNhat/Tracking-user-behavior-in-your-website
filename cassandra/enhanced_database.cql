@@ -2,7 +2,7 @@
 -- Optimized for multi-datacenter deployment with fault tolerance
 
 -- ✅ Tạo Keyspaces (user_behavior_analytics, user_behavior_archive, user_behavior_realtime)
--- ✅ Tạo TẤT CẢ các Tables (customers, websites, events, sessions, etc.)
+-- ✅ Tạo TẤT CẢ các Tables (customers, websites, events, , etc.)
 -- ✅ Tạo Materialized Views
 -- ✅ Tạo Indexes
 -- ✅ Tạo User Defined Functions
@@ -48,45 +48,27 @@ CREATE TABLE IF NOT EXISTS customers (
     plan TEXT, -- free, premium, enterprise
     status TEXT, -- active, suspended, inactive
     settings MAP<TEXT, TEXT>,
-    password_hash TEXT,
-    billing_info MAP<TEXT, TEXT>,
-    usage_limits MAP<TEXT, BIGINT>, -- API calls, events per month, etc.
+    password_hash TEXT, -- for customer authentication
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    last_login TIMESTAMP,
-    subscription_expires_at TIMESTAMP,
-    total_websites INT,
-    total_events_tracked BIGINT
-) WITH 
-    gc_grace_seconds = 864000 AND -- 10 days
-    compaction = {
-        'class': 'LeveledCompactionStrategy',
-        'sstable_size_in_mb': 160
-    } AND
-    compression = {
-        'class': 'LZ4Compressor',
-        'compression_level': 1
-    };
+    last_login TIMESTAMP
+);
 
 -- Websites table with customer_id as partition key for better locality
 CREATE TABLE IF NOT EXISTS websites (
+    website_id UUID PRIMARY KEY,
     customer_id UUID,
-    website_id UUID,
     name TEXT,
     domain TEXT,
     url TEXT,
-    status TEXT,
-    settings MAP<TEXT, TEXT>,
-    api_key TEXT,
-    tracking_code TEXT,
-    daily_event_limit BIGINT,
-    monthly_event_count BIGINT,
+    status TEXT, -- active, inactive, suspended
+    settings MAP<TEXT, TEXT>, -- tracking settings, privacy config
+    api_key TEXT, -- changed from SET<TEXT> to TEXT
     created_at TIMESTAMP,
     updated_at TIMESTAMP,
-    last_activity TIMESTAMP,
-    PRIMARY KEY (customer_id, website_id)
+    last_activity TIMESTAMP
 ) WITH 
-    gc_grace_seconds = 864000 AND
+    gc_grace_seconds = 259200  AND
     compaction = {
         'class': 'LeveledCompactionStrategy'
     };
@@ -101,7 +83,7 @@ CREATE TABLE IF NOT EXISTS websites_by_id (
     status TEXT,
     settings MAP<TEXT, TEXT>
 ) WITH 
-    gc_grace_seconds = 864000;
+    gc_grace_seconds = 259200 ;
 
 -- ====================================
 -- HIGH-PERFORMANCE EVENT TRACKING TABLES
@@ -144,7 +126,7 @@ CREATE TABLE IF NOT EXISTS events (
     utm_content TEXT,
     page_load_time INT, -- milliseconds
     connection_type TEXT, -- 4g, wifi, etc.
-    PRIMARY KEY ((website_id, event_date, event_hour), event_time, event_id)
+    PRIMARY KEY ((website_id, event_date), event_time, event_id)
 ) WITH CLUSTERING ORDER BY (event_time DESC)
     AND gc_grace_seconds = 259200 -- 3 days for faster tombstone collection
     AND compaction = {
@@ -184,38 +166,6 @@ CREATE TABLE IF NOT EXISTS events_by_user (
     };
 
 -- Sessions table for session-based analytics
-CREATE TABLE IF NOT EXISTS sessions (
-    website_id UUID,
-    session_date TEXT, -- YYYY-MM-DD
-    session_id UUID,
-    visitor_id UUID,
-    user_id UUID,
-    start_time TIMESTAMP,
-    end_time TIMESTAMP,
-    duration_seconds INT,
-    page_views INT,
-    bounce BOOLEAN,
-    entry_page TEXT,
-    exit_page TEXT,
-    referrer TEXT,
-    utm_source TEXT,
-    utm_medium TEXT,
-    utm_campaign TEXT,
-    device_type TEXT,
-    browser TEXT,
-    os TEXT,
-    country TEXT,
-    city TEXT,
-    events_count INT,
-    conversion_events SET<TEXT>, -- Track conversion events in this session
-    PRIMARY KEY ((website_id, session_date), start_time, session_id)
-) WITH CLUSTERING ORDER BY (start_time DESC)
-    AND gc_grace_seconds = 864000
-    AND compaction = {
-        'class': 'TimeWindowCompactionStrategy',
-        'compaction_window_unit': 'DAYS',
-        'compaction_window_size': 7
-    };
 
 -- Real-time aggregations table for dashboard metrics
 CREATE TABLE IF NOT EXISTS realtime_metrics (
@@ -240,18 +190,32 @@ CREATE TABLE IF NOT EXISTS realtime_metrics (
 -- ====================================
 
 -- Events by type for fast event-specific queries
-CREATE MATERIALIZED VIEW IF NOT EXISTS events_by_type AS
-    SELECT website_id, event_type, event_date, event_hour, event_time, event_id, 
-           visitor_id, session_id, page_url, properties, device_type, country
-    FROM events
-    WHERE website_id IS NOT NULL 
-        AND event_date IS NOT NULL 
-        AND event_hour IS NOT NULL
-        AND event_time IS NOT NULL 
-        AND event_id IS NOT NULL
-        AND event_type IS NOT NULL
-    PRIMARY KEY ((website_id, event_type), event_date, event_hour, event_time, event_id)
-    WITH CLUSTERING ORDER BY (event_date DESC, event_hour DESC, event_time DESC);
+CREATE TABLE IF NOT EXISTS events_by_type (
+    website_id UUID,
+    event_type TEXT,
+    event_date TEXT,
+    event_time TIMESTAMP,
+    event_id UUID,
+    visitor_id UUID,
+    session_id UUID,
+    page_url TEXT,
+    properties MAP<TEXT, TEXT>,
+    PRIMARY KEY ((website_id, event_type), event_date, event_time, event_id)
+) WITH CLUSTERING ORDER BY (event_date DESC, event_time DESC);
+
+CREATE TABLE IF NOT EXISTS events_by_session (
+    website_id UUID,
+    session_id UUID,
+    event_time TIMESTAMP,
+    event_id UUID,
+    visitor_id UUID,
+    event_type TEXT,
+    event_name TEXT,
+    page_url TEXT,
+    duration_since_start BIGINT, -- milliseconds since session start
+    properties MAP<TEXT, TEXT>,
+    PRIMARY KEY ((website_id, session_id), event_time, event_id)
+) WITH CLUSTERING ORDER BY (event_time ASC);
 
 -- Popular pages materialized view
 CREATE MATERIALIZED VIEW IF NOT EXISTS events_by_page AS

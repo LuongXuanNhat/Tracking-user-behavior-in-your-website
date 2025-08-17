@@ -599,59 +599,8 @@ export default function WebsiteDetail() {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-8 pt-4">
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <Card>
-            <CardContent className="flex items-center p-6">
-              <Eye className="w-10 h-10 text-blue-600 mr-4" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">Tổng Events</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {allEvents.length}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="flex items-center p-6">
-              <User className="w-10 h-10 text-green-600 mr-4" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">
-                  Unique Visitors
-                </p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {new Set(allEvents.map((e) => e.visitor_id)).size}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="flex items-center p-6">
-              <Mouse className="w-10 h-10 text-purple-600 mr-4" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">Page Views</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {allEvents.filter((e) => e.event_type === "pageview").length}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="flex items-center p-6">
-              <Calendar className="w-10 h-10 text-orange-600 mr-4" />
-              <div>
-                <p className="text-sm font-medium text-gray-600">Sessions</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {new Set(allEvents.map((e) => e.session_id)).size}
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
         {/* Filters */}
         {/* <Card className="mb-6">
@@ -749,6 +698,66 @@ export default function WebsiteDetail() {
         {activeTab === "analytics" && (
           <>
             {/* Filters */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <Card>
+                <CardContent className="flex items-center p-6">
+                  <Eye className="w-10 h-10 text-blue-600 mr-4" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Tổng Events
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {allEvents.length}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="flex items-center p-6">
+                  <User className="w-10 h-10 text-green-600 mr-4" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Unique Visitors
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {new Set(allEvents.map((e) => e.visitor_id)).size}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="flex items-center p-6">
+                  <Mouse className="w-10 h-10 text-purple-600 mr-4" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Page Views
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {
+                        allEvents.filter((e) => e.event_type === "pageview")
+                          .length
+                      }
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="flex items-center p-6">
+                  <Calendar className="w-10 h-10 text-orange-600 mr-4" />
+                  <div>
+                    <p className="text-sm font-medium text-gray-600">
+                      Sessions
+                    </p>
+                    <p className="text-2xl font-bold text-gray-900">
+                      {new Set(allEvents.map((e) => e.session_id)).size}
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
             <Card className="mb-6">
               <CardHeader>
                 <CardTitle className="flex items-center">

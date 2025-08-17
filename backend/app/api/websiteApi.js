@@ -124,7 +124,7 @@ export async function getAllEventByWebsite(req, res) {
     const {
       start_date,
       end_date,
-      limit = 100,
+      limit = 1000,
       event_type,
       visitor_id,
       session_id,

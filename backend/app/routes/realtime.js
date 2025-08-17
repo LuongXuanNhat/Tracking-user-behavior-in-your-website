@@ -7,7 +7,13 @@ import { authenticateUser } from "../middlewares/authenticate.js";
 
 const router = express.Router();
 
-// Apply authentication middleware to all routes
+/**
+ * GET /api/realtime/debug/connections
+ * Debug socket connections (không cần auth để dễ debug)
+ */
+router.get("/debug/connections", realtimeApi.getSocketConnectionsDebug);
+
+// Apply authentication middleware to protected routes
 router.use(authenticateUser);
 
 /**

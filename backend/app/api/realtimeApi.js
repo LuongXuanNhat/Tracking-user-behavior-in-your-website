@@ -2,6 +2,30 @@
 // API endpoints cho realtime events - tối ưu cho Cassandra
 
 import { Event } from "../models/Event.js";
+import socketService from "../services/socketService.js";
+
+/**
+ * Debug endpoint to check socket connections
+ * GET /api/realtime/debug/connections
+ */
+export async function getSocketConnectionsDebug(req, res) {
+  try {
+    const connectionInfo = socketService.getConnectionInfo();
+
+    res.json({
+      success: true,
+      data: connectionInfo,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    console.error("Error getting socket connection info:", error);
+    res.status(500).json({
+      success: false,
+      message: "Không thể lấy thông tin kết nối socket",
+      error: error.message,
+    });
+  }
+}
 
 /**
  * Lấy events realtime theo website với pagination
