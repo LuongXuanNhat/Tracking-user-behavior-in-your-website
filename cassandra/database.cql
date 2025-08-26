@@ -215,19 +215,7 @@ CREATE INDEX IF NOT EXISTS api_key_websites_website_idx ON api_key_websites (web
 CREATE INDEX IF NOT EXISTS api_key_websites_customer_idx ON api_key_websites (customer_id);
 CREATE INDEX IF NOT EXISTS api_key_websites_status_idx ON api_key_websites (status);
 
--- Popular pages materialized view
-CREATE MATERIALIZED VIEW IF NOT EXISTS events_by_page AS
-    SELECT website_id, page_url, event_date, event_hour, event_time, event_id,
-           visitor_id, session_id, event_type, device_type, country
-    FROM events
-    WHERE website_id IS NOT NULL 
-        AND event_date IS NOT NULL 
-        AND event_hour IS NOT NULL
-        AND event_time IS NOT NULL 
-        AND event_id IS NOT NULL
-        AND page_url IS NOT NULL
-    PRIMARY KEY ((website_id, page_url), event_date, event_hour, event_time, event_id)
-    WITH CLUSTERING ORDER BY (event_date DESC, event_hour DESC, event_time DESC);
+
 
 -- ====================================
 -- ARCHIVE TABLES FOR DATA LIFECYCLE MANAGEMENT

@@ -149,7 +149,7 @@ class SocketService {
   subscribeToWebsite(websiteId: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!this.socket?.connected) {
-        reject(new Error("Socket not connected"));
+        console.log(new Error("Socket not connected"));
         return;
       }
 

@@ -4,6 +4,8 @@ docker exec -it cassandra_user_logs cqlsh -e "DELETE FROM user_behavior_analytic
 -- Tạo database: Copy file -> run file
 docker cp cassandra/database_v2.cql cassandra_user_logs:/database_v2.cql && docker exec -it cassandra_user_logs cqlsh -f /database_v2.cql
 
+docker cp cassandra/database.cql cassandra_node1:/database.cql && docker exec -it cassandra_node1 cqlsh -f /database.cql
+
 
 -- Xóa keyspace
 docker exec -i cassandra_user_logs cqlsh -e "DROP KEYSPACE IF EXISTS user_behavior_analytics;"
@@ -19,6 +21,6 @@ docker exec -i cassandra_user_logs cqlsh -e "USE user_behavior_analytics; CREATE
 
 
 -- Xóa tạo lại:
-docker-compose -f docker-compose-ha.yml up -d --build --force-recreate
+docker-compose -f docker-compose.yml up -d --build --force-recreate
 
 

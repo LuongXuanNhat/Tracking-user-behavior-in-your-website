@@ -5,28 +5,20 @@ import { useRouter, useParams } from "next/navigation";
 import {
   ArrowLeft,
   Globe,
-  Calendar,
-  User,
-  Mouse,
-  Eye,
-  Filter,
-  Download,
-  Activity,
   BarChart3,
   Settings,
   X,
+  Activity,
+  TrendingUp,
 } from "lucide-react";
 import { Button } from "../../components/ui/button";
-import { Input } from "../../components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "../../components/ui/card";
 import ApiService from "../../service/api";
-import Pagination from "@/app/components/paging";
 import socketService, { RealtimeEvent } from "../../service/socketService";
+import {
+  AnalyticsTab,
+  RealtimeTab,
+  ReportsTab,
+} from "../../components/website";
 
 interface Event {
   event_id: string;
@@ -76,9 +68,9 @@ export default function WebsiteDetail() {
   const [totalItems, setTotalItems] = useState(0);
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<"analytics" | "realtime">(
-    "analytics"
-  );
+  const [activeTab, setActiveTab] = useState<
+    "analytics" | "realtime" | "reports"
+  >("analytics");
 
   // Settings popup state
   const [showSettingsPopup, setShowSettingsPopup] = useState(false);
@@ -690,446 +682,62 @@ export default function WebsiteDetail() {
                   <span className="ml-2 w-2 h-2 bg-green-500 rounded-full inline-block"></span>
                 )}
               </button>
+              <button
+                onClick={() => setActiveTab("reports")}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === "reports"
+                    ? "border-blue-500 text-blue-600"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                }`}
+              >
+                <TrendingUp className="w-4 h-4 inline mr-2" />
+                Báo cáo & Biểu đồ
+              </button>
             </nav>
           </div>
         </div>
 
         {/* Analytics Tab Content */}
         {activeTab === "analytics" && (
-          <>
-            {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-              <Card>
-                <CardContent className="flex items-center p-6">
-                  <Eye className="w-10 h-10 text-blue-600 mr-4" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">
-                      Tổng Events
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {allEvents.length}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="flex items-center p-6">
-                  <User className="w-10 h-10 text-green-600 mr-4" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">
-                      Unique Visitors
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {new Set(allEvents.map((e) => e.visitor_id)).size}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="flex items-center p-6">
-                  <Mouse className="w-10 h-10 text-purple-600 mr-4" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">
-                      Page Views
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {
-                        allEvents.filter((e) => e.event_type === "pageview")
-                          .length
-                      }
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardContent className="flex items-center p-6">
-                  <Calendar className="w-10 h-10 text-orange-600 mr-4" />
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">
-                      Sessions
-                    </p>
-                    <p className="text-2xl font-bold text-gray-900">
-                      {new Set(allEvents.map((e) => e.session_id)).size}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-            <Card className="mb-6">
-              <CardHeader>
-                <CardTitle className="flex items-center">
-                  <Filter className="w-5 h-5 mr-2" />
-                  Bộ lọc
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                  <Input
-                    label="Ngày bắt đầu"
-                    type="date"
-                    value={filters.startDate}
-                    onChange={(e) =>
-                      handleFilterChange("startDate", e.target.value)
-                    }
-                  />
-                  <Input
-                    label="Ngày kết thúc"
-                    type="date"
-                    value={filters.endDate}
-                    onChange={(e) =>
-                      handleFilterChange("endDate", e.target.value)
-                    }
-                  />
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Loại sự kiện
-                    </label>
-                    <select
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                      value={filters.eventType}
-                      onChange={(e) =>
-                        handleFilterChange("eventType", e.target.value)
-                      }
-                    >
-                      <option value="">Tất cả</option>
-                      {uniqueEventTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <Input
-                    label="Trang"
-                    value={filters.page}
-                    onChange={(e) => handleFilterChange("page", e.target.value)}
-                    placeholder="Tìm theo URL"
-                  />
-                  <div className="flex items-end space-x-2">
-                    <Button onClick={applyFilters}>Áp dụng</Button>
-                    <Button variant="secondary" onClick={clearFilters}>
-                      Xóa
-                    </Button>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </>
-        )}
-
-        {/* Events Table - Analytics Tab */}
-        {activeTab === "analytics" && (
-          <Card className="pb-6">
-            <CardHeader>
-              <div className="flex justify-between items-center pb-1">
-                <CardTitle>Danh sách Events</CardTitle>
-                <div className="flex space-x-2">
-                  <Button variant="secondary" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
-                    Export
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {eventsLoading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">Đang tải events...</p>
-                </div>
-              ) : allEvents.length === 0 ? (
-                <div className="text-center py-8">
-                  <Eye className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    Chưa có event nào
-                  </h3>
-                  <p className="text-gray-600">
-                    Events sẽ hiển thị ở đây khi có người dùng tương tác với
-                    website
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Thời gian
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Loại sự kiện
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Trang
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Visitor ID
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Thiết bị
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Vị trí
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {events.map((event) => (
-                        <tr key={event.event_id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDateTime(event.event_time)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${getEventTypeColor(
-                                event.event_type
-                              )}`}
-                            >
-                              {event.event_name || event.event_type}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                            <span title={event.page_url}>
-                              {event.page_title || event.page_url}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                            {event.visitor_id.slice(0, 8)}...
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {event.device_type && (
-                              <div>
-                                <div>{event.device_type}</div>
-                                {event.browser && (
-                                  <div className="text-xs">{event.browser}</div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {event.country && (
-                              <div>
-                                <div>{event.country}</div>
-                                {event.city && (
-                                  <div className="text-xs">{event.city}</div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-            <Pagination
-              currentPage={currentPage}
-              totalItems={totalItems}
-              itemsPerPage={itemsPerPage}
-              onPageChange={handlePageChange}
-              onItemsPerPageChange={handleItemsPerPageChange}
-              itemsPerPageOptions={[10, 20, 50]}
-            />
-          </Card>
+          <AnalyticsTab
+            events={events}
+            allEvents={allEvents}
+            eventsLoading={eventsLoading}
+            totalItems={totalItems}
+            currentPage={currentPage}
+            itemsPerPage={itemsPerPage}
+            filters={filters}
+            uniqueEventTypes={uniqueEventTypes}
+            onPageChange={handlePageChange}
+            onItemsPerPageChange={handleItemsPerPageChange}
+            onFilterChange={handleFilterChange}
+            onApplyFilters={applyFilters}
+            onClearFilters={clearFilters}
+            formatDateTime={formatDateTime}
+            getEventTypeColor={getEventTypeColor}
+          />
         )}
 
         {/* Realtime Events Tab */}
         {activeTab === "realtime" && (
-          <Card className="pb-6">
-            <CardHeader>
-              <div className="flex justify-between items-center pb-1">
-                <CardTitle className="flex items-center">
-                  <Activity className="w-5 h-5 mr-2" />
-                  Realtime Events
-                  {socketConnected ? (
-                    <span className="ml-2 flex items-center text-sm text-green-600">
-                      <span className="w-2 h-2 bg-green-500 rounded-full mr-1 animate-pulse"></span>
-                      Connected
-                    </span>
-                  ) : (
-                    <span className="ml-2 flex items-center text-sm text-red-600">
-                      <span className="w-2 h-2 bg-red-500 rounded-full mr-1"></span>
-                      Disconnected
-                    </span>
-                  )}
-                  <span className="ml-2 text-xs text-gray-500">
-                    ({realtimeEvents.length} events)
-                  </span>
-                </CardTitle>
-                <div className="flex space-x-2">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={loadRealtimeEvents}
-                    disabled={realtimeLoading}
-                  >
-                    {realtimeLoading ? "Loading..." : "Refresh"}
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={async () => {
-                      try {
-                        const response = await fetch(
-                          `${
-                            process.env.NEXT_PUBLIC_API_URL ||
-                            "http://localhost:3002"
-                          }/api/tracking/test-broadcast`,
-                          {
-                            method: "POST",
-                            headers: {
-                              "Content-Type": "application/json",
-                              Authorization: `Bearer ${localStorage.getItem(
-                                "token"
-                              )}`,
-                            },
-                            body: JSON.stringify({ websiteId }),
-                          }
-                        );
-                        const result = await response.json();
-                        console.log("Test broadcast result:", result);
-                      } catch (error) {
-                        console.error("Test broadcast error:", error);
-                      }
-                    }}
-                  >
-                    Test Event
-                  </Button>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      console.log("🔍 Debug Info:");
-                      console.log("Socket Connected:", socketConnected);
-                      console.log(
-                        "Socket Service Connected:",
-                        socketService.isConnected()
-                      );
-                      console.log("Realtime Events:", realtimeEvents);
-                      console.log("Website ID:", websiteId);
-                      console.log("Active Tab:", activeTab);
-                    }}
-                  >
-                    Debug
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {realtimeLoading ? (
-                <div className="text-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-                  <p className="mt-2 text-gray-600">
-                    Đang tải realtime events...
-                  </p>
-                </div>
-              ) : realtimeEvents.length === 0 ? (
-                <div className="text-center py-8">
-                  <Mouse className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">
-                    {socketConnected
-                      ? "Chưa có events realtime"
-                      : "Đang kết nối..."}
-                  </h3>
-                  <p className="text-gray-600">
-                    {socketConnected
-                      ? "Realtime events sẽ hiển thị ở đây khi có hoạt động mới trên website."
-                      : "Đang thiết lập kết nối realtime để nhận events..."}
-                  </p>
-                  <p className="text-xs text-gray-500 mt-2">
-                    Status:{" "}
-                    {socketConnected ? "✅ Connected" : "🔄 Connecting..."}
-                  </p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-gray-200">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Thời gian
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Loại sự kiện
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Trang
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Visitor ID
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Thiết bị
-                        </th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                          Vị trí
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {realtimeEvents.map((event) => (
-                        <tr key={event.event_id} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                            {formatDateTime(event.event_time)}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span
-                              className={`px-2 py-1 text-xs rounded-full ${getEventTypeColor(
-                                event.event_type
-                              )}`}
-                            >
-                              {event.event_name || event.event_type}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                            <span title={event.page_url}>
-                              {event.page_title || event.page_url}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 font-mono">
-                            {event.visitor_id.slice(0, 8)}...
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {event.device_type && (
-                              <div>
-                                <div>{event.device_type}</div>
-                                {event.browser && (
-                                  <div className="text-xs">{event.browser}</div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {event.country && (
-                              <div>
-                                <div>{event.country}</div>
-                                {event.city && (
-                                  <div className="text-xs">{event.city}</div>
-                                )}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </CardContent>
-            <Pagination
-              currentPage={realtimeCurrentPage}
-              totalItems={realtimeTotalItems}
-              itemsPerPage={realtimeItemsPerPage}
-              onPageChange={handleRealtimePageChange}
-              onItemsPerPageChange={handleRealtimeItemsPerPageChange}
-              itemsPerPageOptions={[10, 20, 50]}
-            />
-          </Card>
+          <RealtimeTab
+            websiteId={websiteId}
+            realtimeEvents={realtimeEvents}
+            realtimeLoading={realtimeLoading}
+            socketConnected={socketConnected}
+            realtimeTotalItems={realtimeTotalItems}
+            realtimeCurrentPage={realtimeCurrentPage}
+            realtimeItemsPerPage={realtimeItemsPerPage}
+            onRealtimePageChange={handleRealtimePageChange}
+            onRealtimeItemsPerPageChange={handleRealtimeItemsPerPageChange}
+            onLoadRealtimeEvents={loadRealtimeEvents}
+            formatDateTime={formatDateTime}
+            getEventTypeColor={getEventTypeColor}
+          />
         )}
+
+        {/* Reports Tab */}
+        {activeTab === "reports" && <ReportsTab websiteId={websiteId} />}
       </main>
     </div>
   );

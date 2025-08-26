@@ -252,8 +252,11 @@ export class Website {
       const query = `SELECT * FROM ${KEYSPACE}.api_key_websites WHERE api_key = ?`;
       const result = await client.execute(query, [apiKey], {
         prepare: true,
-        readTimeout: 5000, // Giảm timeout xuống 5s vì query nhanh hơn
-        consistency: types.consistencies.localOne, // Fast consistency
+        readTimeout: 8000, // Tăng timeout để tương thích với failover
+        consistency: types.consistencies.localQuorum, // Consistency mạnh hơn cho HA
+        retry: {
+          times: 3, // Retry 3 lần khi có lỗi
+        },
       });
 
       if (result.rows.length === 0) return null;
@@ -271,6 +274,18 @@ export class Website {
       return website;
     } catch (error) {
       console.error("Error finding website by api key:", error);
+
+      // Specific error handling for connection issues
+      if (
+        error.code === "ECONNREFUSED" ||
+        error.name === "NoHostAvailableError"
+      ) {
+        console.error("❌ Database connection failed - attempting recovery...");
+        // Log the error but don't expose sensitive information
+        throw new Error("Database temporarily unavailable. Please try again.");
+      }
+
+      // For other errors, log and rethrow
       throw error;
     }
   }

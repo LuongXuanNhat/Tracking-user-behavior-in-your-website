@@ -19,9 +19,58 @@ interface RegisterResponse {
   token: string;
 }
 
+interface CustomerProfileResponse {
+  customer: {
+    customer_id: string;
+    name: string;
+    email: string;
+    company?: string;
+    plan?: string;
+    created_at: string;
+    last_login?: string;
+  };
+}
+
 class ApiService {
+  // Utility function để decode JWT token
+  private static decodeToken(token: string): any {
+    try {
+      const base64Url = token.split(".")[1];
+      const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+      const jsonPayload = decodeURIComponent(
+        atob(base64)
+          .split("")
+          .map(function (c) {
+            return "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2);
+          })
+          .join("")
+      );
+      return JSON.parse(jsonPayload);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // Kiểm tra xem token có hết hạn không
+  private static isTokenExpired(token: string): boolean {
+    const decoded = this.decodeToken(token);
+    if (!decoded || !decoded.exp) {
+      return true;
+    }
+
+    const currentTime = Date.now() / 1000;
+    return decoded.exp < currentTime;
+  }
+
   private static getAuthHeaders(): HeadersInit {
     const token = localStorage.getItem("token");
+
+    // Kiểm tra token trước khi sử dụng
+    if (token && this.isTokenExpired(token)) {
+      this.logout();
+      throw new Error("Token đã hết hạn");
+    }
+
     return {
       "Content-Type": "application/json",
       ...(token && { Authorization: `Bearer ${token}` }),
@@ -34,6 +83,19 @@ class ApiService {
     const data = await response.json();
 
     if (!response.ok) {
+      // Xử lý token hết hạn (401 Unauthorized)
+      if (response.status === 401) {
+        // Xóa token và customer data từ localStorage
+        this.logout();
+
+        // Chuyển hướng về trang đăng nhập
+        if (typeof window !== "undefined") {
+          window.location.href = "/auth";
+        }
+
+        throw new Error("Token đã hết hạn");
+      }
+
       throw new Error(data.message || "Có lỗi xảy ra");
     }
 
@@ -97,17 +159,62 @@ class ApiService {
   }
 
   static isAuthenticated(): boolean {
-    return !!localStorage.getItem("token");
+    const token = localStorage.getItem("token");
+    if (!token) {
+      return false;
+    }
+
+    // Kiểm tra xem token có hết hạn không
+    if (this.isTokenExpired(token)) {
+      this.logout(); // Tự động xóa token hết hạn
+      return false;
+    }
+
+    return true;
+  }
+
+  // Phương thức để xử lý logout khi token hết hạn
+  static handleTokenExpired() {
+    this.logout();
+    if (typeof window !== "undefined") {
+      window.location.href = "/auth";
+    }
+  }
+
+  // Phương thức wrapper để thực hiện API call với xử lý token hết hạn
+  static async makeAuthenticatedRequest<T>(
+    url: string,
+    options: RequestInit = {}
+  ): Promise<ApiResponse<T>> {
+    try {
+      const headers = this.getAuthHeaders();
+
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...headers,
+          ...options.headers,
+        },
+      });
+
+      return await this.handleResponse<T>(response);
+    } catch (error) {
+      if (error instanceof Error && error.message === "Token đã hết hạn") {
+        // Chuyển hướng về trang đăng nhập
+        if (typeof window !== "undefined") {
+          window.location.href = "/auth";
+        }
+        throw error;
+      }
+      throw error;
+    }
   }
 
   // Website APIs
   static async getWebsites() {
-    const response = await fetch(`${API_BASE_URL}/api/websites`, {
+    return this.makeAuthenticatedRequest(`${API_BASE_URL}/api/websites`, {
       method: "GET",
-      headers: this.getAuthHeaders(),
     });
-
-    return this.handleResponse(response);
   }
 
   static async createWebsite(data: {
@@ -115,13 +222,10 @@ class ApiService {
     url: string;
     description?: string;
   }) {
-    const response = await fetch(`${API_BASE_URL}/api/websites`, {
+    return this.makeAuthenticatedRequest(`${API_BASE_URL}/api/websites`, {
       method: "POST",
-      headers: this.getAuthHeaders(),
       body: JSON.stringify(data),
     });
-
-    return this.handleResponse(response);
   }
 
   static async getWebsiteById(websiteId: string) {
@@ -130,12 +234,12 @@ class ApiService {
       throw new Error("Website ID không hợp lệ");
     }
 
-    const response = await fetch(`${API_BASE_URL}/api/websites/${websiteId}`, {
-      method: "GET",
-      headers: this.getAuthHeaders(),
-    });
-
-    return this.handleResponse(response);
+    return this.makeAuthenticatedRequest(
+      `${API_BASE_URL}/api/websites/${websiteId}`,
+      {
+        method: "GET",
+      }
+    );
   }
 
   // Events APIs
@@ -293,27 +397,25 @@ class ApiService {
 
   // Customer profile APIs
   static async getCustomerProfile() {
-    const response = await fetch(`${API_BASE_URL}/api/customers/profile`, {
-      method: "GET",
-      headers: this.getAuthHeaders(),
-    });
-
-    return this.handleResponse(response);
+    return this.makeAuthenticatedRequest(
+      `${API_BASE_URL}/api/customers/profile`,
+      {
+        method: "GET",
+      }
+    );
   }
 
   static async updateCustomerProfile(data: {
     name?: string;
-    email?: string;
-    phone?: string;
-    address?: string;
+    company?: string;
   }) {
-    const response = await fetch(`${API_BASE_URL}/api/customers/profile`, {
-      method: "PUT",
-      headers: this.getAuthHeaders(),
-      body: JSON.stringify(data),
-    });
-
-    return this.handleResponse(response);
+    return this.makeAuthenticatedRequest(
+      `${API_BASE_URL}/api/customers/profile`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
   }
 
   static async changePassword(data: {

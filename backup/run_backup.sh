@@ -5,7 +5,7 @@
 # ===================================
 
 # Configuration
-CONTAINER_NAME="cassandra_user_logs"
+CONTAINER_NAME="cassandra_node1"
 KEYSPACE="user_behavior_analytics"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DATE_TIME=$(date +%Y%m%d_%H%M%S)

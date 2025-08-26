@@ -31,6 +31,7 @@ import analyticsRoutes from "./app/routes/analytics.js";
 import websiteRoutes from "./app/routes/website.js";
 import apiKeyRoutes from "./app/routes/apikey.js";
 import realtimeRoutes from "./app/routes/realtime.js";
+import healthRoutes from "./app/routes/health.js";
 import socketService from "./app/services/socketService.js";
 
 app.use("/api/customers", customerRoutes);
@@ -40,6 +41,7 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/websites", websiteRoutes);
 app.use("/api/api-keys", apiKeyRoutes);
 app.use("/api/realtime", realtimeRoutes);
+app.use("/health", healthRoutes);
 
 // Test route
 app.get("/", (req, res) => {
@@ -55,6 +57,7 @@ app.get("/", (req, res) => {
       websites: "/api/websites",
       apiKeys: "/api/api-keys",
       realtime: "/api/realtime",
+      health: "/health",
     },
     auth: {
       required: true,
@@ -65,8 +68,8 @@ app.get("/", (req, res) => {
   });
 });
 
-// Health check
-app.get("/health", (req, res) => {
+// Legacy health check (kept for compatibility)
+app.get("/health-legacy", (req, res) => {
   res.json({
     status: "healthy",
     timestamp: new Date().toISOString(),

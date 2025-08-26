@@ -179,14 +179,14 @@ export async function getCustomerProfile(req, res) {
       });
     }
 
-    // Lấy danh sách websites của customer
-    const websites = await Website.findByCustomerId(customerId);
+    // Lấy thông tin customer và loại bỏ password
+    const customerData = customer.toJSON();
+    delete customerData.password_hash;
 
     res.json({
       success: true,
       data: {
-        customer: customer.toJSON(),
-        websites: websites.map((w) => w.toJSON()),
+        customer: customerData,
       },
     });
   } catch (error) {
@@ -206,7 +206,7 @@ export async function getCustomerProfile(req, res) {
 export async function updateCustomerProfile(req, res) {
   try {
     const customerId = req.customer.customerId;
-    const { name, settings } = req.body;
+    const { name, company, settings } = req.body;
 
     const customer = await Customer.findById(customerId);
     if (!customer) {
@@ -218,14 +218,22 @@ export async function updateCustomerProfile(req, res) {
 
     const updateData = {};
     if (name !== undefined) updateData.name = name;
+    if (company !== undefined) updateData.company = company;
     if (settings !== undefined) updateData.settings = settings;
 
     await customer.update(updateData);
 
+    // Lấy thông tin customer đã cập nhật và loại bỏ password
+    const updatedCustomer = await Customer.findById(customerId);
+    const customerData = updatedCustomer.toJSON();
+    delete customerData.password_hash;
+
     res.json({
       success: true,
       message: "Cập nhật thành công",
-      data: customer.toJSON(),
+      data: {
+        customer: customerData,
+      },
     });
   } catch (error) {
     console.error("Update customer profile error:", error);

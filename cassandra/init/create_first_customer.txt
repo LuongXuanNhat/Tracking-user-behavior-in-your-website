@@ -1,0 +1,11 @@
+curl --location "http://localhost:3002/api/customers/register" ^
+--header "Content-Type: application/json" ^
+--header "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJjdXN0b21lcklkIjoiNzgwZDdkNDYtMzgzMS00NWViLThiNDUtOWI0Yzg3N2UyNzRmIiwiZW1haWwiOiJvbmlvbndlYmRldkBnbWFpbC5jb20iLCJpYXQiOjE3NTUzOTk0MjEsImV4cCI6MTc1Nzk5MTQyMX0.2HqBsEH73Dd449nInZP5TE0v4p9EgqBXO45o_QPawPE" ^
+--data-raw "{\"name\": \"Lương Xuân Anh\", \"email\": \"onionwebdev@gmail.com\", \"password\": \"password123\", \"websiteName\": \"Như Thị Beauty\", \"websiteUrl\": \"http://localhost:3000\"}"
+
+
+Kiểm tra memory usage:
+docker stats --no-stream
+
+Chạy script monitor để theo dõi:
+monitor-cassandra.bat

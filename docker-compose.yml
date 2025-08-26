@@ -1,5 +1,9 @@
-version: "3.8"
+version:
+  "3.8"
 
+  #  Discovered Host 1: 127.0.0.1:9042 🟢 UP (datacenter1/rack1)
+  #  Discovered Host 2: 172.20.0.4:9042 🟢 UP (datacenter1/rack1)
+  #  Discovered Host 3: 172.20.0.5:9042 🟢 UP (datacenter1/rack1)
 services:
   # ====================================
   # CASSANDRA CLUSTER - SINGLE DC
@@ -19,20 +23,20 @@ services:
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_NUM_TOKENS=256
       - CASSANDRA_SEEDS=cassandra-node1
-      - MAX_HEAP_SIZE=1024M # Tăng heap size
-      - HEAP_NEWSIZE=256M # Tăng new generation heap
+      - MAX_HEAP_SIZE=1536M # 1.5GB heap cho máy 32GB - cân bằng với apps khác
+      - HEAP_NEWSIZE=384M # 1/4 của heap size
       - CASSANDRA_CONCURRENT_READS=32 # Tăng concurrent reads
-      - CASSANDRA_CONCURRENT_WRITES=32 # Tăng concurrent writes
-      - CASSANDRA_CONCURRENT_COUNTER_WRITES=32 # Tăng counter writes
+      - CASSANDRA_CONCURRENT_WRITES=64 # Tăng concurrent writes để ghi nhanh hơn
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=64 # Tăng counter writes
       - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
-      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=4 # Tăng flush writers
-      - CASSANDRA_CONCURRENT_COMPACTORS=4 # Tăng compactors
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=8 # Tăng flush writers để ghi nhanh hơn
+      - CASSANDRA_CONCURRENT_COMPACTORS=8 # Tăng compactors
       - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=64 # Tăng compaction throughput
-      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=30000 # Tăng read timeout
-      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=20000 # Tăng write timeout
-      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=15000
-      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=60000 # Tăng range request timeout
-      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=60000 # Tăng general request timeout
+      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=15000 # Giảm read timeout để phát hiện lỗi sớm
+      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=10000 # Giảm write timeout
+      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=8000
+      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=30000 # Giảm range request timeout
+      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=30000 # Giảm general request timeout
     volumes:
       - cassandra_node1_data:/var/lib/cassandra
       - ./cassandra/init:/docker-entrypoint-initdb.d
@@ -40,10 +44,10 @@ services:
       - cassandra_network
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 3m
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 2m
     ulimits:
       memlock: -1
       nofile: 100000
@@ -65,21 +69,20 @@ services:
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_NUM_TOKENS=256
       - CASSANDRA_SEEDS=cassandra-node1
-      - MAX_HEAP_SIZE=1024M # Tăng heap size
-      - HEAP_NEWSIZE=256M # Tăng new generation heap
+      - MAX_HEAP_SIZE=1536M # 1.5GB heap cho máy 32GB - cân bằng với apps khác
+      - HEAP_NEWSIZE=384M # 1/4 của heap size
       - CASSANDRA_CONCURRENT_READS=32 # Tăng concurrent reads
-      - CASSANDRA_CONCURRENT_WRITES=32 # Tăng concurrent writes
-      - CASSANDRA_CONCURRENT_COUNTER_WRITES=32 # Tăng counter writes
+      - CASSANDRA_CONCURRENT_WRITES=64 # Tăng concurrent writes để ghi nhanh hơn
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=64 # Tăng counter writes
       - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
-      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=4 # Tăng flush writers
-      - CASSANDRA_CONCURRENT_COMPACTORS=4 # Tăng compactors
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=8 # Tăng flush writers để ghi nhanh hơn
+      - CASSANDRA_CONCURRENT_COMPACTORS=8 # Tăng compactors
       - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=64 # Tăng compaction throughput
-      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=30000 # Tăng read timeout
-      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=20000 # Tăng write timeout
-      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=15000
-      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=60000 # Tăng range request timeout
-      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=60000 # Tăng general request timeout
-      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=32
+      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=15000 # Giảm read timeout để phát hiện lỗi sớm
+      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=10000 # Giảm write timeout
+      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=8000
+      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=30000 # Giảm range request timeout
+      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=30000 # Giảm general request timeout
     volumes:
       - cassandra_node2_data:/var/lib/cassandra
     networks:
@@ -89,10 +92,10 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 4m
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 2m
     ulimits:
       memlock: -1
       nofile: 100000
@@ -114,38 +117,33 @@ services:
       - CASSANDRA_ENDPOINT_SNITCH=GossipingPropertyFileSnitch
       - CASSANDRA_NUM_TOKENS=256
       - CASSANDRA_SEEDS=cassandra-node1
-      - MAX_HEAP_SIZE=1024M # Tăng heap size
-      - HEAP_NEWSIZE=256M # Tăng new generation heap
+      - MAX_HEAP_SIZE=1536M # 1.5GB heap cho máy 32GB - cân bằng với apps khác
+      - HEAP_NEWSIZE=384M # 1/4 của heap size
       - CASSANDRA_CONCURRENT_READS=32 # Tăng concurrent reads
-      - CASSANDRA_CONCURRENT_WRITES=32 # Tăng concurrent writes
-      - CASSANDRA_CONCURRENT_COUNTER_WRITES=32 # Tăng counter writes
+      - CASSANDRA_CONCURRENT_WRITES=64 # Tăng concurrent writes để ghi nhanh hơn
+      - CASSANDRA_CONCURRENT_COUNTER_WRITES=64 # Tăng counter writes
       - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
-      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=4 # Tăng flush writers
-      - CASSANDRA_CONCURRENT_COMPACTORS=4 # Tăng compactors
+      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=8 # Tăng flush writers để ghi nhanh hơn
+      - CASSANDRA_CONCURRENT_COMPACTORS=8 # Tăng compactors
       - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=64 # Tăng compaction throughput
-      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=30000 # Tăng read timeout
-      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=20000 # Tăng write timeout
-      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=15000
-      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=60000 # Tăng range request timeout
-      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=60000 # Tăng general request timeout
-      - CASSANDRA_CONCURRENT_COUNTER_WRITES=16
-      - CASSANDRA_MEMTABLE_ALLOCATION_TYPE=heap_buffers
-      - CASSANDRA_MEMTABLE_FLUSH_WRITERS=2
-      - CASSANDRA_CONCURRENT_COMPACTORS=2
-      - CASSANDRA_COMPACTION_THROUGHPUT_MB_PER_SEC=32
+      - CASSANDRA_READ_REQUEST_TIMEOUT_IN_MS=15000 # Giảm read timeout để phát hiện lỗi sớm
+      - CASSANDRA_WRITE_REQUEST_TIMEOUT_IN_MS=10000 # Giảm write timeout
+      - CASSANDRA_COUNTER_WRITE_REQUEST_TIMEOUT_IN_MS=8000
+      - CASSANDRA_RANGE_REQUEST_TIMEOUT_IN_MS=30000 # Giảm range request timeout
+      - CASSANDRA_REQUEST_TIMEOUT_IN_MS=30000 # Giảm general request timeout
     volumes:
       - cassandra_node3_data:/var/lib/cassandra
     networks:
       - cassandra_network
     depends_on:
-      cassandra-node2:
+      cassandra-node1:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster' || exit 1"]
-      interval: 30s
-      timeout: 15s
-      retries: 10
-      start_period: 5m
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 3m
     ulimits:
       memlock: -1
       nofile: 100000

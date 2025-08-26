@@ -8,7 +8,7 @@ REM ===================================
 setlocal EnableDelayedExpansion
 
 REM Configuration
-set "CONTAINER_NAME=cassandra_user_logs"
+set "CONTAINER_NAME=cassandra_node1"
 set "KEYSPACE=user_behavior_analytics"
 set "SCRIPT_DIR=%~dp0"
 

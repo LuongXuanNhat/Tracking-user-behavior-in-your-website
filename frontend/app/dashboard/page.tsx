@@ -2,7 +2,14 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Globe, Calendar, Activity, LogOut } from "lucide-react";
+import {
+  Plus,
+  Globe,
+  Calendar,
+  Activity,
+  LogOut,
+  Settings,
+} from "lucide-react";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import {
@@ -12,6 +19,8 @@ import {
   CardTitle,
 } from "../components/ui/card";
 import ApiService from "../service/api";
+import { useAuthCheck } from "../hooks/useAuthCheck";
+import ProfileModal from "../components/ProfileModal";
 
 interface Website {
   website_id: string;
@@ -27,8 +36,12 @@ export default function Dashboard() {
   const [websites, setWebsites] = useState<Website[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
   const [customer, setCustomer] = useState<any>(null);
   const router = useRouter();
+
+  // Sử dụng hook để tự động kiểm tra authentication
+  useAuthCheck();
 
   const [newWebsite, setNewWebsite] = useState({
     name: "",
@@ -59,6 +72,17 @@ export default function Dashboard() {
       }
     } catch (error) {
       console.error("Error loading websites:", error);
+
+      // Nếu là lỗi token hết hạn, không cần làm gì thêm vì ApiService đã xử lý
+      if (error instanceof Error && error.message === "Token đã hết hạn") {
+        return; // ApiService.handleResponse đã chuyển hướng về /auth
+      }
+
+      // Xử lý các lỗi khác
+      alert(
+        "Có lỗi xảy ra khi tải danh sách website: " +
+          (error instanceof Error ? error.message : "Lỗi không xác định")
+      );
     } finally {
       setLoading(false);
     }
@@ -82,6 +106,10 @@ export default function Dashboard() {
   const handleLogout = () => {
     ApiService.logout();
     router.push("/auth");
+  };
+
+  const handleProfileUpdate = (updatedCustomer: any) => {
+    setCustomer(updatedCustomer);
   };
 
   const formatDate = (dateString: string) => {
@@ -109,10 +137,19 @@ export default function Dashboard() {
               <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
               <p className="text-gray-600">Xin chào, {customer?.name}</p>
             </div>
-            <Button variant="secondary" onClick={handleLogout}>
-              <LogOut className="w-4 h-4 mr-2" />
-              Đăng xuất
-            </Button>
+            <div className="flex space-x-3">
+              <Button
+                variant="secondary"
+                onClick={() => setShowProfileModal(true)}
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                Thông tin tài khoản
+              </Button>
+              <Button variant="secondary" onClick={handleLogout}>
+                <LogOut className="w-4 h-4 mr-2" />
+                Đăng xuất
+              </Button>
+            </div>
           </div>
         </div>
       </header>
@@ -293,6 +330,13 @@ export default function Dashboard() {
           </div>
         )}
       </main>
+
+      {/* Profile Modal */}
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+        onUpdate={handleProfileUpdate}
+      />
     </div>
   );
 }

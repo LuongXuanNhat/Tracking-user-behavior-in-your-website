@@ -14,8 +14,8 @@ const server = createServer(app);
 // Initialize Cassandra connection
 async function startServer() {
   try {
-    console.log("🔄 Connecting to Cassandra...");
-    await cassandraConnection.connect();
+    console.log("🔄 Connecting to Cassandra with retry mechanism...");
+    await cassandraConnection.connectWithRetries(10, 5000); // 10 attempts, 5s initial delay
 
     // Initialize Socket.IO
     console.log("🔌 Initializing Socket.IO...");
@@ -31,10 +31,14 @@ async function startServer() {
           socketService.isInitialized() ? "Ready" : "Not Ready"
         }`
       );
+      console.log("💓 Database health monitoring is active");
     });
   } catch (error) {
     console.error("❌ Failed to start server:", error);
-    process.exit(1);
+    console.log("🔄 Will attempt to restart in 10 seconds...");
+    setTimeout(() => {
+      startServer();
+    }, 10000);
   }
 }
 

@@ -240,3 +240,15 @@ Nếu gặp vấn đề, hãy kiểm tra:
 ---
 
 **Lưu ý**: Script này được thiết kế cho hệ thống User Behavior Analytics với Cassandra. Hãy đảm bảo cấu hình phù hợp với môi trường của bạn.
+
+## 🚀 Cách sử dụng
+
+```
+cd backup
+run_backup_with_data.bat
+
+# Linux - Backup đầy đủ dữ liệu
+cd backup
+chmod +x run_backup_with_data.sh
+./run_backup_with_data.sh
+```
